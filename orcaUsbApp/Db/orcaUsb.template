@@ -1,0 +1,167 @@
+record(stringin, "$(P)$(R)CAMERA_NAME")
+{
+   field(DTYP, "asynOctetRead")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_NAME")
+   field(SCAN, "I/O Intr")
+}
+
+record(stringin, "$(P)$(R)CAMERA_SERIAL")
+{
+   field(DTYP, "asynOctetRead")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_SERIAL")
+   field(SCAN, "I/O Intr")
+}
+
+record(stringin, "$(P)$(R)CAMERA_FIRMWARE")
+{
+   field(DTYP, "asynOctetRead")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_FIRMWARE")
+   field(SCAN, "I/O Intr")
+}
+
+record(stringin, "$(P)$(R)CAMERA_INFO")
+{
+   field(DTYP, "asynOctetRead")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_INFO")
+   field(SCAN, "I/O Intr")
+}
+
+record(mbbo, "$(P)$(R)CAMERA_TRG")
+{
+   field(DTYP, "asynInt32")
+   field(OUT,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRG")
+   field(PINI, "YES")
+   field(ZRST, "Edge Trigger")
+   field(ZRVL, "0")
+   field(ONST, "Level Trigger")
+   field(ONVL, "1")
+}
+
+record(mbbi, "$(P)$(R)CAMERA_TRG_RBV")
+{
+   field(DTYP, "asynInt32")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRG")
+   field(PINI, "YES")
+   field(ZRST, "Edge Trigger")
+   field(ZRVL, "0")
+   field(ONST, "Level Trigger")
+   field(ONVL, "1")
+   field(SCAN, "I/O Intr")
+}
+
+
+record(mbbo, "$(P)$(R)CAMERA_TRGPOL")
+{
+   field(DTYP, "asynInt32")
+   field(OUT,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRGPOL")
+   field(PINI, "YES")
+   field(ZRST, "Negative")
+   field(ZRVL, "0")
+   field(ONST, "Positive")
+   field(ONVL, "1")
+}
+
+record(mbbi, "$(P)$(R)CAMERA_TRGPOL_RBV")
+{
+   field(DTYP, "asynInt32")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRGPOL")
+   field(PINI, "YES")
+   field(ZRST, "Negative")
+   field(ZRVL, "0")
+   field(ONST, "Positive")
+   field(ONVL, "1")
+   field(SCAN, "I/O Intr")
+}
+
+
+record(mbbo, "$(P)$(R)CAMERA_TRGGLOBALEXP")
+{
+   field(DTYP, "asynInt32")
+   field(OUT,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRGGLOBALEXP")
+   field(PINI, "NO")
+   field(VAL,  "5")  
+   field(ONST, "None")
+   field(ONVL, "1")
+   field(TWST, "Always")
+   field(TWVL, "2")
+   field(THST, "Delayed")
+   field(THVL, "3")
+   field(FRST, "Emulate")
+   field(FRVL, "4")
+   field(FRST, "Global Reset")
+   field(FRVL, "5")
+}
+
+record(mbbi, "$(P)$(R)CAMERA_TRGGLOBALEXP_RBV")
+{
+   field(DTYP, "asynInt32")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_TRGGLOBALEXP")
+   field(PINI, "NO")
+   field(ONST, "None")
+   field(ONVL, "1")
+   field(TWST, "Always")
+   field(TWVL, "2")
+   field(THST, "Delayed")
+   field(THVL, "3")
+   field(FRST, "Emulate")
+   field(FRVL, "4")
+   field(FRST, "Global Reset")
+   field(FRVL, "5")
+   field(SCAN, "I/O Intr")
+}
+
+
+record(ai, "$(P)$(R)CAMERA_IMGPROCTIME_RBV")
+{
+   field(DTYP, "asynFloat64")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_IMGPROCTIME")
+   field(PREC, "3")
+   field(SCAN, "I/O Intr")
+   field(EGU, "micro-seconds")
+}
+
+record(ai, "$(P)$(R)CAMERA_CALLBACKPROCTIME_RBV")
+{
+   field(DTYP, "asynFloat64")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_CBPROCTIME")
+   field(PREC, "3")
+   field(SCAN, "I/O Intr")
+   field(EGU, "micro-seconds")
+}
+
+record(ai, "$(P)$(R)CAMERA_WAITPROCTIME_RBV")
+{
+   field(DTYP, "asynFloat64")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_WAITPROCTIME")
+   field(PREC, "3")
+   field(SCAN, "I/O Intr")
+   field(EGU, "micro-seconds")
+}
+
+record(ai, "$(P)$(R)CAMERA_STARTPROCTIME_RBV")
+{
+   field(DTYP, "asynFloat64")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_STARTPROCTIME")
+   field(PREC, "3")
+   field(SCAN, "I/O Intr")
+   field(EGU, "micro-seconds")
+}
+
+record(ai, "$(P)$(R)CAMERA_EVRELLAPSETIME_RBV")
+{
+   field(DTYP, "asynFloat64")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_ELLAPSETIME")
+   field(PREC, "3")
+   field(SCAN, "I/O Intr")
+   field(EGU, "micro-seconds")
+}
+
+record(ai, "$(P)$(R)CAMERA_LOSTFRAMESYNC_RBV")
+{
+   field(DTYP, "asynInt32")
+   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_LOSTFRAMESYNC")
+   field(PREC, "0")
+   field(SCAN, "I/O Intr")
+   field(EGU, "Counter")
+}
+

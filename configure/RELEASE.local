@@ -1,0 +1,53 @@
+#RELEASE Location of external products
+# Run "gnumake clean uninstall install" in the application
+# top directory each time this file is changed.
+#
+# NOTE: The build does not check dependancies on files
+# external to this application. Thus you should run
+# "gnumake clean uninstall install" in the top directory
+# each time EPICS_BASE, SNCSEQ, or any other external
+# module defined in the RELEASE file is rebuilt.
+
+# If you don't want to install into $(TOP) then
+# define INSTALL_LOCATION_APP here
+#INSTALL_LOCATION_APP=<fullpathname>
+
+# =============================================================
+# All needed variables come in via the following include:
+# =============================================================
+include $(TOP)/RELEASE_SITE
+
+TEMPLATE_TOP=$(EPICS_BASE)/templates/makeBaseApp/top
+
+# =============================================================
+# Define location of the modules tree
+# =============================================================
+EPICS_MODULES=$(MODULES_SITE_TOP)
+
+
+# ==============================================================
+# Define the cvs module version of EPICS BASE that you will use
+# =============================================================
+BASE_MODULE_VERSION=$(EPICS_BASE_VER)
+
+# =============================================================
+# Define the version of modules needed by
+# IOC apps or other Support apps
+# =============================================================
+ASYN_MODULE_VERSION= R4.39-0.0.1
+ADCORE_MODULE_VERSION=R3.9-1.0.1
+PERFMEASURE_MODULE_VERSION=R1.5.1
+
+# ============================================================
+#  Module Location
+# ============================================================
+ASYN=$(EPICS_MODULES)/asyn/$(ASYN_MODULE_VERSION)
+ADCORE=$(EPICS_MODULES)/ADCore/$(ADCORE_MODULE_VERSION)
+PERFMEASURE=$(EPICS_MODULES)/perfMeasure/$(PERFMEASURE_MODULE_VERSION)
+
+# =================================================================
+# Define EPICS_BASEOC
+# EPICS_BASE usually appears last so other apps can override stuff:
+# =================================================================
+EPICS_BASE=$(BASE_SITE_TOP)/$(BASE_MODULE_VERSION)
+

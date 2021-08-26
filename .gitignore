@@ -1,0 +1,27 @@
+# Prerequisites
+*.d
+
+# eco products
+RELEASE_SITE
+envPaths
+
+# Build products
+alh/
+archive/
+bin/
+cfg/
+lib/
+db/
+dbd/
+display/
+restore/
+O.*/
+
+
+# Linux 
+*~
+\#*#
+
+# Misc
+*.old
+
