@@ -1,53 +1,45 @@
-#RELEASE Location of external products
-# Run "gnumake clean uninstall install" in the application
-# top directory each time this file is changed.
+# RELEASE.local
 #
-# NOTE: The build does not check dependancies on files
-# external to this application. Thus you should run
-# "gnumake clean uninstall install" in the top directory
-# each time EPICS_BASE, SNCSEQ, or any other external
-# module defined in the RELEASE file is rebuilt.
+# Read definitions of:
+#   EPICS_SITE_TOP
+#   BASE_MODULE_VERSION
+#   EPICS_MODULES
+# from one of the following options
+-include $(TOP)/RELEASE_SITE
 
-# If you don't want to install into $(TOP) then
-# define INSTALL_LOCATION_APP here
-#INSTALL_LOCATION_APP=<fullpathname>
+# ==========================================================
+# Define the version strings for all needed modules
+# Use naming pattern:
+#   FOO_MODULE_VERSION = R1.2
+# so scripts can extract version strings
+# Don't set your version to anything such as "test" that
+# could match a directory name.
+# ==========================================================
 
-# =============================================================
-# All needed variables come in via the following include:
-# =============================================================
-include $(TOP)/RELEASE_SITE
+ASYN_MODULE_VERSION        = R4.39-1.0.0
+ADCORE_MODULE_VERSION      = R3.9-1.0.2
+PERFMEASURE_MODULE_VERSION = R1.5.1
 
-TEMPLATE_TOP=$(EPICS_BASE)/templates/makeBaseApp/top
-
-# =============================================================
-# Define location of the modules tree
-# =============================================================
-EPICS_MODULES=$(MODULES_SITE_TOP)
-
-
-# ==============================================================
-# Define the cvs module version of EPICS BASE that you will use
-# =============================================================
-BASE_MODULE_VERSION=$(EPICS_BASE_VER)
-
-# =============================================================
-# Define the version of modules needed by
-# IOC apps or other Support apps
-# =============================================================
-ASYN_MODULE_VERSION= R4.39-0.0.1
-ADCORE_MODULE_VERSION=R3.9-1.0.1
-PERFMEASURE_MODULE_VERSION=R1.5.1
-
-# ============================================================
-#  Module Location
-# ============================================================
-ASYN=$(EPICS_MODULES)/asyn/$(ASYN_MODULE_VERSION)
-ADCORE=$(EPICS_MODULES)/ADCore/$(ADCORE_MODULE_VERSION)
-PERFMEASURE=$(EPICS_MODULES)/perfMeasure/$(PERFMEASURE_MODULE_VERSION)
+# ==========================================================
+# Define module paths using pattern
+# FOO = $(EPICS_MODULES)/foo/$(FOO_MODULE_VERSION)
+#  or
+# FOO = /Full/Path/To/Development/Version
+# ==========================================================
+ASYN        = $(EPICS_MODULES)/asyn/$(ASYN_MODULE_VERSION)
+ADCORE      = $(EPICS_MODULES)/ADCore/$(ADCORE_MODULE_VERSION)
+PERFMEASURE = $(EPICS_MODULES)/perfMeasure/$(PERFMEASURE_MODULE_VERSION)
 
 # =================================================================
 # Define EPICS_BASEOC
 # EPICS_BASE usually appears last so other apps can override stuff:
 # =================================================================
 EPICS_BASE=$(BASE_SITE_TOP)/$(BASE_MODULE_VERSION)
+
+# Check for undefined EPICS_BASE
+-include $(TOP)/../../EPICS_BASE.check
+
+
+
+
 
