@@ -1,5 +1,8 @@
 RELEASE_NOTES for orcaUsbApp (Orca-Flash Camera USB Driver)
 ----------------------------------------------------
+R0.0.3:   2021-10-29   J. Vamosi
+          Exposure debug message removed to avoid flooding log file
+
 R0.0.2:   2021-09-29   K. Luchini  (luchini)
           - upgrade to asyn/R4.39-1.0.0
           - upgrade to ADCore/R3.9-1.0.2
