@@ -1077,8 +1077,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
                         if (getGlobalExposureDelay(&value) != -1)
                             printf( "Exposure Delay (ms): %f\n", 1000*value);
 
-                        if (getInvalidExposurePeriod(&value) != -1)
-                            printf( "Invalid Exposure Period (ms): %f\n", 1000*value);
+                        //if (getInvalidExposurePeriod(&value) != -1)
+                        //    printf( "Invalid Exposure Period (ms): %f\n", 1000*value);
 
                         if (getTriggerDelay(&value) != -1)
                             printf( "Trigger Delay (ms): %f\n", 1000*value);
@@ -1436,12 +1436,12 @@ void OrcaUsbDriver::dataTask(void)
 
             if( captransferinfo.nFrameCount < 1 )
             {
-                printf("#%d: Error: no image captured\n", cameraIndex);
+                //printf("#%d: Error: no image captured\n", cameraIndex);
                 continue;
             }
             else
             {
-                printf("#%d: got %d images\n", cameraIndex, captransferinfo.nFrameCount);
+                //printf("#%d: got %d images\n", cameraIndex, captransferinfo.nFrameCount);
             }
 
             endPerfMeasure(perf_wait);
