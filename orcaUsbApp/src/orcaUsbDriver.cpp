@@ -7,6 +7,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <string>
 #include <unistd.h>
@@ -1297,6 +1298,8 @@ asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value)
 void OrcaUsbDriver::dataTask(void)
 {
     DCAMERR err;
+    int printDebugMsg = 0;
+    char *debug;
 
     int ndims = 2;
     size_t dims[2] = {2048, 2048};
@@ -1346,9 +1349,26 @@ void OrcaUsbDriver::dataTask(void)
 
     while(!exit_loop) /* infinte loop */
     {  
-        printf("#%d: Waiting for event...\n", cameraIndex);
+        debug = getenv("ORCA_DEBUG");
+        if (debug != NULL)
+        {
+            if (strcmp(debug, "1")==0 || strcmp(debug, "ON")==0)
+                printDebugMsg = 1;
+            else
+                printDebugMsg = 0;
+        }
+        else
+        {
+            printDebugMsg = 0;
+        }
+
+        if (printDebugMsg)
+            printf("#%d: Waiting for event...\n", cameraIndex);
+        
         epicsEventWait(dataEvent);
-        printf("#%d: Event arrived\n", cameraIndex);
+
+        if (printDebugMsg)
+            printf("#%d: Event arrived\n", cameraIndex);
 
         if (exit_loop) break;
 
@@ -1372,7 +1392,8 @@ void OrcaUsbDriver::dataTask(void)
         }
 
         setIntegerParam(ADStatus, ADStatusAcquire);
-        printf("#%d: Start Acquire Loop\n", cameraIndex);
+        if (printDebugMsg)
+            printf("#%d: Start Acquire Loop\n", cameraIndex);
 
         getGeometry();
 
@@ -1400,7 +1421,8 @@ void OrcaUsbDriver::dataTask(void)
         if( failed(err) )
         {
             //printf("#%d: Error: dcamcap_start()\n", cameraIndex);
-            printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
+            if (printDebugMsg)
+                printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
             //return;
         }
 
@@ -1418,7 +1440,8 @@ void OrcaUsbDriver::dataTask(void)
             if( failed(err) )
             {
                 //printf("#%d: Error: dcamwait_start()\n", cameraIndex);
-                printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
+                if (printDebugMsg)
+                    printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
                 continue;
             }
 
@@ -1430,7 +1453,8 @@ void OrcaUsbDriver::dataTask(void)
             if( failed(err) )
             {
                 //printf("#%d: Error: dcamcap_transferinfo()\n", cameraIndex);
-                printCameraError(cameraIndex, hdcam, err, "dcamcap_transferinfo()\n");
+                if (printDebugMsg)
+                    printCameraError(cameraIndex, hdcam, err, "dcamcap_transferinfo()\n");
                 continue;
             }
 
@@ -1468,7 +1492,8 @@ void OrcaUsbDriver::dataTask(void)
             if( failed(err) )
             {
                 //printf("#%d: Error: dcambuf_copyframe()\n", cameraIndex);
-                printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
+                if (printDebugMsg)
+                    printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
             }
 
             //startPerfMeasure(perf_start);
