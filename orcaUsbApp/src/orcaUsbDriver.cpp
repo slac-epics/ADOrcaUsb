@@ -1362,13 +1362,9 @@ void OrcaUsbDriver::dataTask(void)
             printDebugMsg = 0;
         }
 
-        if (printDebugMsg)
-            printf("#%d: Waiting for event...\n", cameraIndex);
-        
+        printf("#%d: Waiting for event...\n", cameraIndex);
         epicsEventWait(dataEvent);
-
-        if (printDebugMsg)
-            printf("#%d: Event arrived\n", cameraIndex);
+        printf("#%d: Event arrived\n", cameraIndex);
 
         if (exit_loop) break;
 
@@ -1392,8 +1388,7 @@ void OrcaUsbDriver::dataTask(void)
         }
 
         setIntegerParam(ADStatus, ADStatusAcquire);
-        if (printDebugMsg)
-            printf("#%d: Start Acquire Loop\n", cameraIndex);
+        printf("#%d: Start Acquire Loop\n", cameraIndex);
 
         getGeometry();
 
@@ -1563,7 +1558,7 @@ void OrcaUsbDriver::dataTask(void)
         
         setIntegerParam(ADStatus, ADStatusIdle);
         callParamCallbacks();
-        printf("#%d: Stop Acquire Loop\n", cameraIndex);
+        printf("#%d: End Acquire Loop\n", cameraIndex);
     } /* end of infinite loop */
 
     delete[] pData;
