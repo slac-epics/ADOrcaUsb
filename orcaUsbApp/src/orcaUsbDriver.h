@@ -47,6 +47,10 @@ class OrcaUsbDriver : public ADDriver {
         int getTriggerGlobalExposure(double *value);
         int setTriggerGlobalExposure(int value);
         int setSubarray(int hpos, int hsize, int vpos, int vsize);
+        int setHPos(int hpos);
+        int setHSize(int hsize);
+        int setVPos(int vpos);
+        int setVSize(int vsize);
         void printCameraError(int camIndex, HDCAM hdcam, DCAMERR errid, const char* apiname);
 
         asynStatus setGeometry();

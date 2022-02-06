@@ -35,6 +35,12 @@ extern "C" {
 #define PULSEID(time)           ((time).nsec & LOWER_17_BIT_MASK)
 }
 
+// define default image size and offset
+#define MIN_X   4
+#define MIN_Y   4
+#define SIZE_X  2040
+#define SIZE_Y  2040
+
 #include "orcaUsbDriver.h"
 
 //static const char *driverName = "OrcaUsb";
@@ -835,6 +841,7 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
@@ -843,6 +850,7 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
@@ -851,6 +859,7 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
@@ -859,6 +868,7 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
@@ -867,6 +877,7 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
@@ -875,6 +886,143 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int OrcaUsbDriver::setHPos(int hpos)
+{
+    DCAMERR err;
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, hpos);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
+        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int OrcaUsbDriver::setHSize(int hsize)
+{
+    DCAMERR err;
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
+        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int OrcaUsbDriver::setVPos(int vpos)
+{
+    DCAMERR err;
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, vpos);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
+        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int OrcaUsbDriver::setVSize(int vsize)
+{
+    DCAMERR err;
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
+        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
+        return -1;
+    }
+
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
+
+    if(failed(err))
+    {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
+        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
         return -1;
     }
 
@@ -1184,6 +1332,19 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     if(!getEffectiveSizeY(&tmpint32))
         setIntegerParam(ADMaxSizeY, tmpint32);
 
+    // set image size and offset
+    // image size should be smaller than max to support multiple cameras
+    minX=MIN_X; sizeX=SIZE_X; minY=MIN_Y; sizeY=SIZE_Y;
+    
+    setIntegerParam(ADMinX, minX);
+    setIntegerParam(ADMinY, minY);
+    setIntegerParam(ADSizeX, sizeX);
+    setIntegerParam(ADSizeY, sizeY);
+
+    // subarray setting is supported only in initial phase 
+    // (cannot be set when waiting for image)    
+    setSubarray(minX, sizeX, minY, sizeY);
+
     // register shutdown function for epicsAtExit
     epicsAtExit(exitHookC, this);
 
@@ -1242,11 +1403,33 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
         }
     }
 
-    if(pasynUser->reason == ADMinX)  { setIntegerParam(ADMinX, value); }
-    if(pasynUser->reason == ADMinY)  { setIntegerParam(ADMinY, value); }
-    if(pasynUser->reason == ADSizeX) { setIntegerParam(ADSizeX, value); }
-    if(pasynUser->reason == ADSizeY) { setIntegerParam(ADSizeY, value); }
+    //if(pasynUser->reason == ADMinX)  
+    //{ 
+    //    setIntegerParam(ADMinX, value);
+    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHPos", pasynUser->reason, value);
+    //    if(!setHPos(value)) setIntegerParam(ADMinX, value); 
+    //}
 
+    //if(pasynUser->reason == ADSizeX)  
+    //{ 
+    //    setIntegerParam(ADSizeX, value);
+    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHSize", pasynUser->reason, value);
+    //    if(!setHSize(value)) setIntegerParam(ADSizeX, value); 
+    //}
+
+    //if(pasynUser->reason == ADMinY)  
+    //{ 
+    //    setIntegerParam(ADMinY, value);
+    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVPos", pasynUser->reason, value);
+    //    if(!setVPos(value)) setIntegerParam(ADMinY, value); 
+    //}
+
+    //if(pasynUser->reason == ADSizeY)  
+    //{ 
+    //    setIntegerParam(ADSizeY, value);
+    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVSize", pasynUser->reason, value);
+    //    if(!setVSize(value)) setIntegerParam(ADSizeY, value); 
+    //}
 
     if(pasynUser->reason == ADImageMode)    setIntegerParam(ADImageMode,    value);
     if(pasynUser->reason == ADNumImages)    setIntegerParam(ADNumImages,    value);
@@ -1302,7 +1485,7 @@ void OrcaUsbDriver::dataTask(void)
     char *debug;
 
     int ndims = 2;
-    size_t dims[2] = {2048, 2048};
+    size_t dims[2] = {SIZE_X, SIZE_Y};
     NDArray *pArray;
     unsigned short *pData = NULL;
     int width, height;
@@ -1392,6 +1575,7 @@ void OrcaUsbDriver::dataTask(void)
 
         getGeometry();
 
+        //printf("#%d: Set geometry dX: %d, X: %d, dY: %d, Y: %d\n", cameraIndex, minX, sizeX, minY, sizeY    );
         //setSubarray(minX, sizeX, minY, sizeY);
 
         pData = new unsigned short[sizeX*sizeY];
