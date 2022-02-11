@@ -1038,6 +1038,7 @@ asynStatus OrcaUsbDriver::getGeometry()
 {
     int status = asynSuccess;
 
+    // get image parameters from base class and set variables
     status |= getIntegerParam(ADBinX, &binX); if(binX<1) {binX =1; status |= setIntegerParam(ADBinX, binX);}
     status |= getIntegerParam(ADBinY, &binY); if(binY<1) {binY =1; status |= setIntegerParam(ADBinY, binY);}
     status |= getIntegerParam(ADMinX, &minX);
@@ -1282,6 +1283,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     dataEvent  = epicsEventMustCreate(epicsEventEmpty);
 
     // Create PV Params
+    // Plugins need to call the createParam() function in their constructor 
+    // if they have additional parameters beyond those in the asynPortDriver or NDPluginDriver base classes
     createParam(OrcaCameraNameString,               asynParamOctet, &cameraName);
     createParam(OrcaCameraSerialString,             asynParamOctet, &cameraSerial);
     createParam(OrcaCameraFirmwareString,           asynParamOctet, &cameraFirmware);
@@ -1303,9 +1306,13 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     setStringParam(ADManufacturer, "Hamamatsu");
 
+    // get name from Hamamtsu driver
     if(!getCameraName(str_message))    
     {
+        // set "CAMREA_NAME" PV thru the cameraName PV parameter
         setStringParam(cameraName, str_message);  
+        
+        // set base class parameter default value        
         setStringParam(ADModel, str_message); 
     }
 
@@ -1326,16 +1333,27 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     if(!getActualExposure(&tmpfloat64))
         setDoubleParam(ADAcquireTime, tmpfloat64);
 
+    // get sensor size X from Hamamtsu driver
     if(!getEffectiveSizeX(&tmpint32))
+    {
+        // set base class parameter default value        
         setIntegerParam(ADMaxSizeX, tmpint32);
+        maxSizeX = tmpint32;
+    }
 
+    // get sensor size Y from Hamamtsu driver
     if(!getEffectiveSizeY(&tmpint32))
+    {
+        // set base class parameter default value        
         setIntegerParam(ADMaxSizeY, tmpint32);
+        maxSizeY = tmpint32;
+    }
 
     // set image size and offset
     // image size should be smaller than max to support multiple cameras
     minX=MIN_X; sizeX=SIZE_X; minY=MIN_Y; sizeY=SIZE_Y;
     
+    // set base class parameter default values        
     setIntegerParam(ADMinX, minX);
     setIntegerParam(ADMinY, minY);
     setIntegerParam(ADSizeX, sizeX);
@@ -1573,8 +1591,7 @@ void OrcaUsbDriver::dataTask(void)
         setIntegerParam(ADStatus, ADStatusAcquire);
         printf("#%d: Start Acquire Loop\n", cameraIndex);
 
-        getGeometry();
-
+        //getGeometry();
         //printf("#%d: Set geometry dX: %d, X: %d, dY: %d, Y: %d\n", cameraIndex, minX, sizeX, minY, sizeY    );
         //setSubarray(minX, sizeX, minY, sizeY);
 
@@ -1675,8 +1692,8 @@ void OrcaUsbDriver::dataTask(void)
                     printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
             }
 
-            //startPerfMeasure(perf_start);
-            //endPerfMeasure(perf_start);
+            startPerfMeasure(perf_start);
+            endPerfMeasure(perf_start);
 
             startPerfMeasure(perf_proc);
             
