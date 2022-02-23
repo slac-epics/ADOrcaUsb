@@ -1,5 +1,8 @@
 RELEASE_NOTES for orcaUsbApp (Orca-Flash Camera USB Driver)
 ----------------------------------------------------
+R0.0.6:   2022-02-22   egumtow
+          updated Asyn to R4.39-1.0.1 and ADCORE to R3.9-1.0.3
+
 R0.0.5:   2022-02-06   J. Vamosi
           Decreased image size to 2040x2040 for multiple camera support
 
