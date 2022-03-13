@@ -1,5 +1,9 @@
 RELEASE_NOTES for orcaUsbApp (Orca-Flash Camera USB Driver)
 ----------------------------------------------------
+R0.0.7:   2022-02-12   J. Vamosi
+          Updated to ADCore/R3.9-1.1.0
+          For image acquisition dcambuf_copyframe() replaced with dcambuf_lockframe()
+
 R0.0.6:   2022-02-22   egumtow
           updated Asyn to R4.39-1.0.1 and ADCORE to R3.9-1.0.3
 
