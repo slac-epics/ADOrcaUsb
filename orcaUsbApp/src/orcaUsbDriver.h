@@ -18,7 +18,8 @@ class OrcaUsbDriver : public ADDriver {
         HDCAM hdcam;
         int cameraIndex;
 
-        //int serialQuery(char *cmd, char *resp);
+        int findCameraById(const char* cameraId);
+        int findCamera();
         int getCameraName(char *value);
         int getCameraSerial(char *value);
         int getCameraFirmware(char *value);
@@ -46,6 +47,7 @@ class OrcaUsbDriver : public ADDriver {
         int setTriggerDelay(double value);
         int getTriggerGlobalExposure(double *value);
         int setTriggerGlobalExposure(int value);
+        int getSubarray(int *hpos, int *hsize, int *vpos, int *vsize);
         int setSubarray(int hpos, int hsize, int vpos, int vsize);
         int setHPos(int hpos);
         int setHSize(int hsize);

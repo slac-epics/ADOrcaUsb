@@ -41,6 +41,24 @@ extern "C" {
 #define SIZE_X  2040
 #define SIZE_Y  2040
 
+/**
+ @def	USE_COPYFRAME
+ *
+ *0:	dcambuf_lockframe is used to access image
+ *		This function gets the pointer of images, so it is necessary to copy the target ROI from this poitner. 
+ *      It is possible to calculate the top pointer of each image bundled with the properties related framebundle.
+ *
+ *1:	dcambuf_copyframe is used to access image
+ *		This function sets the pointer of buffer to get the images. 
+ *      DCAM copies the target ROI of each image to this pointer. 
+ */
+
+// 0: call dcambuf_lockframe to access image, 1: call dcambuf_copyframe to access image
+#define USE_COPYFRAME   0
+
+// 0: don't use serial number to identify camera, 1: use serial number to identify camera
+#define USE_SER_NUM   0
+
 #include "orcaUsbDriver.h"
 
 //static const char *driverName = "OrcaUsb";
@@ -832,6 +850,58 @@ int OrcaUsbDriver::setBinning(int binning)
     return 0;
 }
 
+int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize)
+{
+    DCAMERR err;
+    double data;
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, &data);
+
+    if( !failed(err) )
+    {
+        *hpos = data;
+    }
+    else
+    {
+        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHPOS)\n");
+    }
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, &data);
+
+    if( !failed(err) )
+    {
+        *hsize = data;
+    }
+    else
+    {
+        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHSIZE)\n");
+    }
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, &data);
+
+    if( !failed(err) )
+    {
+        *vpos = data;
+    }
+    else
+    {
+        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVPOS)\n");
+    }
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, &data);
+
+    if( !failed(err) )
+    {
+        *vsize = data;
+    }
+    else
+    {
+        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVSIZE)\n");
+    }
+
+    return 0;
+}
+
 int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize)
 {
     DCAMERR err;
@@ -1075,69 +1145,12 @@ void OrcaUsbDriver::printCameraError(int camIndex, HDCAM hdcam, DCAMERR errid, c
         }
 }
 
-//----------------------------------------------------------------------------
-// OrcaUsb Constructor/Destructor
-//----------------------------------------------------------------------------
-
-/** Constructor for OrcaUsb driver; most parameters are simply passed to ADDriver::ADDriver.
-  * After calling the base class constructor this method creates a thread to collect the detector data, 
-  * and sets reasonable default values for the parameters defined in this class, asynNDArrayDriver and ADDriver.
-  * \param[in]: The name of the asyn port driver to be created.
-  * \param[in]: The ID (serial number) of the camera.
-  * \param[in]: The maximum number of NDArray buffers that the NDArrayPool for this driver is 
-  *             allowed to allocate. Set this to -1 to allow an unlimited number of buffers.
-  * \param[in]: The maximum amount of memory that the NDArrayPool for this driver is 
-  *             allowed to allocate. Set this to -1 to allow an unlimited amount of memory.
-  * \param[in]: The thread priority for the asyn port driver thread if ASYN_CANBLOCK is set in asynFlags.
-  * \param[in]: The stack size for the asyn port driver thread if ASYN_CANBLOCK is set in asynFlags.
-  */
-OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int maxBuffers, size_t maxMemory, int priority, int stackSize)
-        : ADDriver(portName, 1, NUM_ORCA_DET_PARAMS, maxBuffers, maxMemory,
-               0, 0,               /* No interfaces beyond those set in ADDriver.cpp */
-               ASYN_CANBLOCK, 1,   /* ASYN_CANBLOCK=1, ASYN_MULTIDEVICE=0, autoConnect=1 */
-               priority, stackSize)
+int OrcaUsbDriver::findCameraById(const char* cameraId)
 {
-    char    str_message[128];
-    double  tmpfloat64;
-    int     tmpint32;
-    int     cameraFound = 0;
-    int     i;
-
+    int i;
     DCAMERR err;
     double value;
-
-    //ellInit(&orcaList);           /* initialize linked list for camera information */
-    initPerfMeasure();
-
-    if(!initialized) 
-    {
-        /* first time to initialize */
-
-        //initLock = epicsMutexCreate();  /* mutex lock for init */
-
-        memset( &apiinit, 0, sizeof(apiinit) );
-        apiinit.size = sizeof(apiinit);
-
-        // initialize DCAM-API
-        err = dcamapi_init( &apiinit );
-
-        if( failed(err) )
-        {
-            printf( "Error: initializing API\n" );
-            return;
-        }
-
-        for (i=0; i<MAX_CAM_NUM; i++)
-            openCameras[i] = 0;
-
-        initialized = 1;
-
-        deviceCount = apiinit.iDeviceCount;
-        printf( "Found %d device(s).\n", deviceCount );
-    }
-
-    // enumarate cameras and find the one by cameraId    
-    hdcam = NULL;
+    int cameraFound = 0;
 
     for(i=0; i<deviceCount; i++)
     {
@@ -1155,7 +1168,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
             if( failed(err) )
             {
                 printf( "#%d: Error: opening camera\n", i );
-                return;
+                return 0;
             }
             else
             {
@@ -1276,8 +1289,215 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
             hdcam = NULL;
         }
 
+        return 0;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
+int OrcaUsbDriver::findCamera()
+{
+    int i;
+    DCAMERR err;
+    double value;
+    int cameraFound = 0;
+
+    //enumerate cameras by device count
+    for(i=0; i<deviceCount; i++)
+    {
+        // open device
+        DCAMDEV_OPEN devopen;
+        memset( &devopen, 0, sizeof(devopen) );
+        devopen.size = sizeof(devopen);
+        devopen.index = i;
+
+        // open and check unused camreas only
+        if (openCameras[i] == 0)
+        {
+            printf( "#%d: Trying to open camera\n", i );
+            err = dcamdev_open( &devopen );
+            if( failed(err) )
+            {
+                printf( "#%d: Error: opening camera\n", i );
+                return 0;
+            }
+            else
+            {
+                hdcam = devopen.hdcam;
+                char data[256];
+
+                DCAMDEV_STRING    param;
+                memset( &param, 0, sizeof(param) );
+                param.size = sizeof(param);
+                param.text = data;
+                param.textbytes = sizeof(data);
+
+                param.iString = DCAM_IDSTR_MODEL;
+                err = dcamdev_getstring( hdcam, &param );
+                if( !failed(err) )
+                {
+                    printf( "#%d: Model: %s\n", i, data);
+                }
+                else
+                {
+                    printf( "#%d: Error: getting model\n", i );
+                }
+
+                param.iString = DCAM_IDSTR_BUS;
+                err = dcamdev_getstring( hdcam, &param );
+                if( !failed(err) )
+                {
+                    printf( "#%d: Bus: %s\n", i, data);
+                }
+                else
+                {
+                    printf( "#%d: Error: getting bus\n", i );
+                }
+
+                param.iString = DCAM_IDSTR_CAMERAID;
+                err = dcamdev_getstring( hdcam, &param );
+                if( !failed(err) )
+                {
+                    printf( "#%d: ID: %s\n", i, data);
+
+                    // register camera
+                    cameraFound = 1;
+                    openCameras[i] = 1;
+                    cameraIndex = i;
+
+                    if (getSensorMode(&value) != -1)
+                        printf( "Sensor Mode: %d\n", (int)value);
+
+                    //set global exposure to GLOBAL RESET (default is DELAYED)
+                    setTriggerGlobalExposure(DCAMPROP_TRIGGER_GLOBALEXPOSURE__GLOBALRESET);
+
+                    if (getTriggerGlobalExposure(&value) != -1)
+                        printf( "Trigger Global Exposure: %d\n", (int)value);
+
+                    if (getTimingExposure(&value) != -1)
+                        printf( "Timing Exposure: %d\n", (int)value);
+
+                    if (getGlobalExposureDelay(&value) != -1)
+                        printf( "Exposure Delay (ms): %f\n", 1000*value);
+
+                    if (getTriggerDelay(&value) != -1)
+                        printf( "Trigger Delay (ms): %f\n", 1000*value);
+
+                    if (getReadoutTime(&value) != -1)
+                        printf( "Readout Time (ms): %f\n", 1000*value);
+
+                    break;
+                }
+                else
+                {
+                    printf( "#%d: Error: getting ID\n", i );
+
+                    // close camera if serial number could not be retreived
+                    dcamdev_close( hdcam );
+                    hdcam = NULL;
+                    printf( "#%d: Unidentified camera closed\n", i );
+                }
+            }
+        }
+        else
+        {
+            printf( "#%d: Camera already used\n", i );
+        }
+    }
+
+    if (!cameraFound)
+    {
+        printf( "Error: no unopen camera found\n" );
+        if (hdcam != NULL)
+        {
+            dcamdev_close( hdcam );
+            hdcam = NULL;
+        }
+
+        return 0;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
+//----------------------------------------------------------------------------
+// OrcaUsb Constructor/Destructor
+//----------------------------------------------------------------------------
+
+/** Constructor for OrcaUsb driver; most parameters are simply passed to ADDriver::ADDriver.
+  * After calling the base class constructor this method creates a thread to collect the detector data, 
+  * and sets reasonable default values for the parameters defined in this class, asynNDArrayDriver and ADDriver.
+  * \param[in]: The name of the asyn port driver to be created.
+  * \param[in]: The ID (serial number) of the camera.
+  * \param[in]: The maximum number of NDArray buffers that the NDArrayPool for this driver is 
+  *             allowed to allocate. Set this to -1 to allow an unlimited number of buffers.
+  * \param[in]: The maximum amount of memory that the NDArrayPool for this driver is 
+  *             allowed to allocate. Set this to -1 to allow an unlimited amount of memory.
+  * \param[in]: The thread priority for the asyn port driver thread if ASYN_CANBLOCK is set in asynFlags.
+  * \param[in]: The stack size for the asyn port driver thread if ASYN_CANBLOCK is set in asynFlags.
+  */
+OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int maxBuffers, size_t maxMemory, int priority, int stackSize)
+        : ADDriver(portName, 1, NUM_ORCA_DET_PARAMS, maxBuffers, maxMemory,
+               0, 0,               /* No interfaces beyond those set in ADDriver.cpp */
+               ASYN_CANBLOCK, 1,   /* ASYN_CANBLOCK=1, ASYN_MULTIDEVICE=0, autoConnect=1 */
+               priority, stackSize)
+{
+    char    str_message[128];
+    double  tmpfloat64;
+    int     tmpint32;
+    int     i;
+    DCAMERR err;
+
+    //ellInit(&orcaList);           /* initialize linked list for camera information */
+    initPerfMeasure();
+
+    if(!initialized) 
+    {
+        /* first time to initialize */
+
+        //initLock = epicsMutexCreate();  /* mutex lock for init */
+
+        memset( &apiinit, 0, sizeof(apiinit) );
+        apiinit.size = sizeof(apiinit);
+
+        // initialize DCAM-API
+        err = dcamapi_init( &apiinit );
+
+        if( failed(err) )
+        {
+            printf( "Error: initializing API\n" );
+            return;
+        }
+
+        for (i=0; i<MAX_CAM_NUM; i++)
+            openCameras[i] = 0;
+
+        initialized = 1;
+
+        deviceCount = apiinit.iDeviceCount;
+        printf( "Found %d device(s).\n", deviceCount );
+    }
+
+    // enumarate cameras and find the one by cameraId    
+    hdcam = NULL;
+
+#if USE_SER_NUM
+    if (findCameraById(cameraId) == 0)
+    {
+        // camera with ID not found
         return;
     }
+#else
+    if (findCamera() == 0)
+    {
+        // camera not found
+        return;
+    }
+#endif
 
     //serialLock = epicsMutexMustCreate();
     dataEvent  = epicsEventMustCreate(epicsEventEmpty);
@@ -1504,20 +1724,33 @@ void OrcaUsbDriver::dataTask(void)
 
     int ndims = 2;
     size_t dims[2] = {SIZE_X, SIZE_Y};
-    NDArray *pArray;
+    NDArray *pArray = NULL;
     unsigned short *pData = NULL;
     int width, height;
-
+    int rowbytes;
     int imageCounter;
+
+    int hp, hs, vp, vs;
+
     //unsigned evr_ticks;
     //int frame_sync;
     //u_int frame_counter;
     //int lostFrameSyncCounter =0;
-
     //int check_c = 0;
 
     DCAMWAIT_OPEN waitopen;
     HDCAMWAIT hwait;
+
+    DCAMBUF_FRAME bufframe;
+    memset( &bufframe, 0, sizeof(bufframe) );
+    bufframe.size = sizeof(bufframe);
+
+    getRowBytes(&rowbytes);
+    width = sizeX;
+    height = sizeY;
+
+    getSubarray(&hp, &hs, &vp, &vs);
+    printf ("Image position and size: left: %d, width: %d, top: %d, height: %d \n", hp, hs, vp, vs); 
 
     perfParm_ts *perf_wait     = makePerfMeasure((char*)"WAIT", (char*)"Wait Image");
     perfParm_ts *perf_start    = makePerfMeasure((char*)"START", (char*)"Start Image");
@@ -1540,7 +1773,7 @@ void OrcaUsbDriver::dataTask(void)
 
     hwait = waitopen.hwait;
 
-    err = dcambuf_alloc( hdcam, 1 );
+    err = dcambuf_alloc( hdcam, 10 );
     if( failed(err) )
     {
         //printf("#%d: Error: dcambuf_alloc()\n", cameraIndex);
@@ -1595,18 +1828,45 @@ void OrcaUsbDriver::dataTask(void)
         //printf("#%d: Set geometry dX: %d, X: %d, dY: %d, Y: %d\n", cameraIndex, minX, sizeX, minY, sizeY    );
         //setSubarray(minX, sizeX, minY, sizeY);
 
+        // iFrame: set to index of image buffer, can be set to -1 to retrieve latest captured image
+        bufframe.iFrame = 0;
+
+        // buf: for lockframe() returns address of image data, for copyframe() set to destination buffer
+        // rowbytes: for lockframe() returns byte size offset value between start of two lines, for copyframe() set offset
+        // type: for lockframe() returns DCAM_PIXELTYPE value of image, for copyframe() set this to 0
+        // width: for lockframe() returns number of horizontal pixels, for copyframe() set to number of horizontal pixels
+        // height: for lockframe() returns number of vertical pixels, for copyframe() set to number of vertical pixels
+        // left: for lockframe() set to 0, for copyframe() set to left offset of source image
+        // top: for lockframe() set to 0, for copyframe() set to top offset of source image
+        // timestamp: returns time stamp of specified frame
+        // framestamp: returns frame stamp of specified frame
+        // camerastamp: returns camera stamp of HDCAM device 
+    #if USE_COPYFRAME
         pData = new unsigned short[sizeX*sizeY];
 
-        width = sizeX;
-        height = sizeY;
+	    bufframe.buf	  = pData;
+	    bufframe.rowbytes = rowbytes;
+	    bufframe.width	  = width;
+	    bufframe.height	  = height;
+	    bufframe.left	  = minX;
+	    bufframe.top	  = minY;
+    #endif
+
+        //printf ("pData: %p\n", pData); 
+        //if (pData == NULL)
+        //    return;
 
         dims[0] = width; dims[1] = height;
+
+        //printf ("bookmark #1\n"); 
 
         setIntegerParam(NDDataType, NDUInt16);
         setIntegerParam(NDArrayCallbacks, 1);
         setIntegerParam(NDArraySizeX, width);
         setIntegerParam(NDArraySizeY, height);
         setIntegerParam(NDArraySize, width*height);
+
+        //printf ("bookmark #2\n"); 
 
         // reset counters
         setIntegerParam(ADNumImagesCounter, 0);
@@ -1621,6 +1881,11 @@ void OrcaUsbDriver::dataTask(void)
                 printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
             //return;
         }
+
+        //printf ("pData: %p, rowbytes: %d, left: %d, top: %d, width: %d, height: %d \n", 
+        //        bufframe.buf, bufframe.rowbytes, bufframe.left, bufframe.top, bufframe.width, bufframe.height); 
+
+        //printf ("bookmark #3\n"); 
 
         while(acquire) 
         {
@@ -1640,6 +1905,8 @@ void OrcaUsbDriver::dataTask(void)
                     printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
                 continue;
             }
+
+            //printf ("bookmark #4\n"); 
 
             DCAMCAP_TRANSFERINFO captransferinfo;
             memset( &captransferinfo, 0, sizeof(captransferinfo) );
@@ -1668,30 +1935,31 @@ void OrcaUsbDriver::dataTask(void)
 
             if(!acquire) continue;
 
-            DCAMBUF_FRAME bufframe;
-            memset( &bufframe, 0, sizeof(bufframe) );
-            bufframe.size = sizeof(bufframe);
-            bufframe.iFrame = 0;
-
-            int rowbytes;
-            getRowBytes(&rowbytes);
-
-            bufframe.buf      = pData;
-            bufframe.rowbytes = rowbytes;
-            bufframe.left     = minX;
-            bufframe.top      = minY;
-            bufframe.width    = width;
-            bufframe.height   = height;
+            //printf ("bookmark #5\n"); 
 
             // access image
+#if USE_COPYFRAME
             err = dcambuf_copyframe( hdcam, &bufframe );
             if( failed(err) )
             {
-                //printf("#%d: Error: dcambuf_copyframe()\n", cameraIndex);
                 if (printDebugMsg)
                     printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
             }
 
+#else
+		    err = dcambuf_lockframe( hdcam, &bufframe );
+		    if( failed(err) )
+		    {
+                if (printDebugMsg)
+                    printCameraError(cameraIndex, hdcam, err, "dcambuf_lockframe()\n");
+		    }
+
+            //printf ("After lockframe: pData: %p, rowbytes: %d, left: %d, top: %d, width: %d, height: %d \n", 
+            //        bufframe.buf, bufframe.rowbytes, bufframe.left, bufframe.top, bufframe.width, bufframe.height); 
+#endif
+            //break;
+            //printf ("bookmark #6\n"); 
+            
             startPerfMeasure(perf_start);
             endPerfMeasure(perf_start);
 
@@ -1699,7 +1967,7 @@ void OrcaUsbDriver::dataTask(void)
             
             this->lock();
             pArray = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, 0, NULL);
-            pArray->ndims=2;
+            pArray->ndims           = 2;
             pArray->dims[0].size    = width;
             pArray->dims[0].offset  = minX;
             pArray->dims[0].binning = binX;
@@ -1709,7 +1977,7 @@ void OrcaUsbDriver::dataTask(void)
             updateTimeStamp(&pArray->epicsTS);
             pArray->uniqueId = PULSEID(pArray->epicsTS);
 
-            memcpy(pArray->pData, pData, width*height*sizeof(unsigned short));
+            memcpy(pArray->pData, bufframe.buf, width*height*sizeof(unsigned short));
 
             {   /* provide POSIX timestamp for the image native timestamp */
                 timespec ts;
@@ -1720,11 +1988,13 @@ void OrcaUsbDriver::dataTask(void)
             //ErGetTicks(0, &evr_ticks); setDoubleParam(cameraEllapseTime, double(evr_ticks)/119.0);
             this->unlock();
             
-            startPerfMeasure(perf_callback);
+            //printf ("bookmark #7\n"); 
+            
+            //startPerfMeasure(perf_callback);
             
             doCallbacksGenericPointer(pArray, NDArrayData, 0);
 
-            endPerfMeasure(perf_callback);
+            //endPerfMeasure(perf_callback);
             
             this->lock();
             pArray->release();
