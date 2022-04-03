@@ -1773,7 +1773,7 @@ void OrcaUsbDriver::dataTask(void)
 
     hwait = waitopen.hwait;
 
-    err = dcambuf_alloc( hdcam, 10 );
+    err = dcambuf_alloc( hdcam, 1 );
     if( failed(err) )
     {
         //printf("#%d: Error: dcambuf_alloc()\n", cameraIndex);
