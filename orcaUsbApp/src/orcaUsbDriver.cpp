@@ -57,7 +57,7 @@ extern "C" {
 #define USE_COPYFRAME   0
 
 // 0: don't use serial number to identify camera, 1: use serial number to identify camera
-#define USE_SER_NUM   0
+#define USE_SER_NUM   1
 
 #include "orcaUsbDriver.h"
 
