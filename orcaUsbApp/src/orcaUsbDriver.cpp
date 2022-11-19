@@ -1628,16 +1628,24 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
 
     if(pasynUser->reason == ADAcquire) 
     {
-        if(value && !acquire) 
+        // acquire on connected cameras only
+        if (openCameras[cameraIndex])
         {
-            acquire = 1;
-            setIntegerParam(ADNumImagesCounter, 0);
-            epicsEventSignal(dataEvent);
-        }
+            if(value && !acquire) 
+            {
+                acquire = 1;
+                setIntegerParam(ADNumImagesCounter, 0);
+                epicsEventSignal(dataEvent);
+            }
 
-        if(!value && acquire) 
+            if(!value && acquire) 
+            {
+                acquire = 0;
+            }
+        }
+        else
         {
-            acquire = 0;
+            printf("#%d: Camera is not available\n", cameraIndex);
         }
     }
 
