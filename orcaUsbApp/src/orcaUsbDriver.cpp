@@ -100,6 +100,7 @@ int OrcaUsbDriver::getCameraName(char *value)
     param.iString = DCAM_IDSTR_MODEL;
 
     err = dcamdev_getstring( hdcam, &param );
+ 
     if( !failed(err) )
     {
         strcpy(value, data);
@@ -205,6 +206,23 @@ int OrcaUsbDriver::getCameraInfo(char *value)
     }
 
     return ret;
+}
+
+int OrcaUsbDriver::getCameraStatus()
+{
+    DCAMERR err;
+    char data[16];
+
+    DCAMDEV_STRING param;
+    memset( &param, 0, sizeof(param) );
+    param.size = sizeof(param);
+    param.text = data;
+    param.textbytes = sizeof(data);
+    param.iString = DCAM_IDSTR_CAMERAID;
+
+    err = dcamdev_getstring( hdcam, &param );
+
+    return !failed(err);
 }
 
 int OrcaUsbDriver::getActualExposure(double *value)
@@ -864,6 +882,7 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize)
     else
     {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHPOS)\n");
+        *hpos = MIN_X;
     }
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, &data);
@@ -875,6 +894,7 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize)
     else
     {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHSIZE)\n");
+        *hsize = SIZE_X;
     }
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, &data);
@@ -886,6 +906,7 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize)
     else
     {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVPOS)\n");
+        *vpos = MIN_Y;
     }
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, &data);
@@ -897,6 +918,7 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize)
     else
     {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVSIZE)\n");
+        *vsize = SIZE_Y;
     }
 
     return 0;
@@ -1154,15 +1176,15 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
 
     for(i=0; i<deviceCount; i++)
     {
-        // open device
-        DCAMDEV_OPEN devopen;
-        memset( &devopen, 0, sizeof(devopen) );
-        devopen.size = sizeof(devopen);
-        devopen.index = i;
-
         // open and check unused camreas only
         if (openCameras[i] == 0)
         {
+            // open device
+            DCAMDEV_OPEN devopen;
+            memset( &devopen, 0, sizeof(devopen) );
+            devopen.size = sizeof(devopen);
+            devopen.index = i;
+
             printf( "#%d: Trying to open camera\n", i );
             err = dcamdev_open( &devopen );
             if( failed(err) )
@@ -1216,7 +1238,6 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
                         // camera with specified serial number found
                         cameraFound = 1;
                         openCameras[i] = 1;
-                        cameraIndex = i;
 
                         printf( "#%d: Camera with ID: %s found\n", i, cameraId );
 
@@ -1307,15 +1328,15 @@ int OrcaUsbDriver::findCamera()
     //enumerate cameras by device count
     for(i=0; i<deviceCount; i++)
     {
-        // open device
-        DCAMDEV_OPEN devopen;
-        memset( &devopen, 0, sizeof(devopen) );
-        devopen.size = sizeof(devopen);
-        devopen.index = i;
-
         // open and check unused camreas only
         if (openCameras[i] == 0)
         {
+            // open device
+            DCAMDEV_OPEN devopen;
+            memset( &devopen, 0, sizeof(devopen) );
+            devopen.size = sizeof(devopen);
+            devopen.index = i;
+
             printf( "#%d: Trying to open camera\n", i );
             err = dcamdev_open( &devopen );
             if( failed(err) )
@@ -1365,7 +1386,6 @@ int OrcaUsbDriver::findCamera()
                     // register camera
                     cameraFound = 1;
                     openCameras[i] = 1;
-                    cameraIndex = i;
 
                     if (getSensorMode(&value) != -1)
                         printf( "Sensor Mode: %d\n", (int)value);
@@ -1403,7 +1423,7 @@ int OrcaUsbDriver::findCamera()
         }
         else
         {
-            printf( "#%d: Camera already used\n", i );
+            printf( "#%d: Camera already in use\n", i );
         }
     }
 
@@ -1455,7 +1475,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     //ellInit(&orcaList);           /* initialize linked list for camera information */
     initPerfMeasure();
 
-    if(!initialized) 
+    if(initCounter == 0) 
     {
         /* first time to initialize */
 
@@ -1476,28 +1496,34 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         for (i=0; i<MAX_CAM_NUM; i++)
             openCameras[i] = 0;
 
-        initialized = 1;
-
         deviceCount = apiinit.iDeviceCount;
         printf( "Found %d device(s).\n", deviceCount );
     }
 
-    // enumarate cameras and find the one by cameraId    
     hdcam = NULL;
 
 #if USE_SER_NUM
-    if (findCameraById(cameraId) == 0)
-    {
-        // camera with ID not found
-        return;
-    }
+    // enumarate cameras and find the one by cameraId    
+    cameraAvailable = findCameraById(cameraId);
 #else
-    if (findCamera() == 0)
-    {
-        // camera not found
-        return;
-    }
+    // find next available camera    
+    cameraAvailable = findCamera();
 #endif
+
+    // set hdcam to -1 as NULL is accepted by dcamdev_getstring()
+    // dcamdev_getstring() can be called with the device index too
+    // and returns with values related to other camera with index 0
+    if (cameraAvailable == 0)
+        hdcam = (HDCAM) -1;
+
+    // set index of camera accrding to driver instance index
+    // even if no camera found for this instance
+    // not available cameras will report error when called
+    cameraIndex = initCounter;
+
+    // increase counter to maintain number of driver instances
+    // (i.e. number of attempts to connect new cameras from EPICS)
+    initCounter++;
 
     //serialLock = epicsMutexMustCreate();
     dataEvent  = epicsEventMustCreate(epicsEventEmpty);
@@ -1512,6 +1538,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     createParam(OrcaCameraTrgString,                asynParamInt32, &cameraTrg);
     createParam(OrcaCameraTrgPolarityString,        asynParamInt32, &cameraTrgPolarity);
     createParam(OrcaCameraTrgGlobalExposureString,  asynParamInt32, &cameraTrgGlobalExposure);
+    createParam(OrcaCameraReadStatString,           asynParamInt32, &cameraReadStat);
+    createParam(OrcaCameraStatusString,             asynParamInt32, &cameraStatus);
 
     createParam(OrcaCameraImgProcTimeString,   asynParamFloat64, &cameraImageProcTime);
     createParam(OrcaCameraCBProcTimeString,    asynParamFloat64, &cameraCallbackProcTime);
@@ -1526,8 +1554,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     setStringParam(ADManufacturer, "Hamamatsu");
 
-    // get name from Hamamtsu driver
-    if(!getCameraName(str_message))    
+    if(getCameraName(str_message) != -1)    
     {
         // set "CAMREA_NAME" PV thru the cameraName PV parameter
         setStringParam(cameraName, str_message);  
@@ -1535,38 +1562,61 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         // set base class parameter default value        
         setStringParam(ADModel, str_message); 
     }
+    else
+    {
+        setStringParam(cameraName, "");  
+        setStringParam(ADModel, ""); 
+    }
 
-    if(!getCameraSerial(str_message)) 
+    if(getCameraSerial(str_message) != -1) 
         setStringParam(cameraSerial, str_message);
+    else
+        setStringParam(cameraSerial, "");
 
-    if(!getCameraFirmware(str_message)) 
+    if(getCameraFirmware(str_message) != -1) 
         setStringParam(cameraFirmware, str_message);
+    else
+        setStringParam(cameraFirmware, "");
 
-    if(!getCameraInfo(str_message))
+    if(getCameraInfo(str_message) != -1)
         setStringParam(cameraInfo, str_message);
+    else
+        setStringParam(cameraInfo, "");
 
     setIntegerParam(cameraTrg, 0);         /* Edge Trigger */
     setIntegerParam(cameraTrgPolarity, 0); /* Negative Polarity */
 
     //setIntegerParam(cameraTrgGlobalExposure, 5); /* Global Reset */
 
-    if(!getActualExposure(&tmpfloat64))
+    if(getActualExposure(&tmpfloat64) != -1)
         setDoubleParam(ADAcquireTime, tmpfloat64);
+    else
+        setDoubleParam(ADAcquireTime, 0);
 
     // get sensor size X from Hamamtsu driver
-    if(!getEffectiveSizeX(&tmpint32))
+    if(getEffectiveSizeX(&tmpint32) != -1)
     {
         // set base class parameter default value        
         setIntegerParam(ADMaxSizeX, tmpint32);
         maxSizeX = tmpint32;
     }
+    else
+    {
+        setIntegerParam(ADMaxSizeX, SIZE_X);
+        maxSizeX = SIZE_X;
+    }
 
     // get sensor size Y from Hamamtsu driver
-    if(!getEffectiveSizeY(&tmpint32))
+    if(getEffectiveSizeY(&tmpint32) != -1)
     {
         // set base class parameter default value        
         setIntegerParam(ADMaxSizeY, tmpint32);
         maxSizeY = tmpint32;
+    }
+    else
+    {
+        setIntegerParam(ADMaxSizeY, SIZE_Y);
+        maxSizeY = SIZE_Y;
     }
 
     // set image size and offset
@@ -1624,7 +1674,7 @@ OrcaUsbDriver::~OrcaUsbDriver()
 asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
 {
     static const char *functionName = "writeInt32";
-    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
+    //printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
 
     if(pasynUser->reason == ADAcquire) 
     {
@@ -1653,45 +1703,63 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
     //{ 
     //    setIntegerParam(ADMinX, value);
     //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHPos", pasynUser->reason, value);
-    //    if(!setHPos(value)) setIntegerParam(ADMinX, value); 
+    //    if(setHPos(value) != -1)
+    //      setIntegerParam(ADMinX, value); 
     //}
 
     //if(pasynUser->reason == ADSizeX)  
     //{ 
     //    setIntegerParam(ADSizeX, value);
     //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHSize", pasynUser->reason, value);
-    //    if(!setHSize(value)) setIntegerParam(ADSizeX, value); 
+    //    if(setHSize(value) != -1)
+    //      setIntegerParam(ADSizeX, value); 
     //}
 
     //if(pasynUser->reason == ADMinY)  
     //{ 
     //    setIntegerParam(ADMinY, value);
     //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVPos", pasynUser->reason, value);
-    //    if(!setVPos(value)) setIntegerParam(ADMinY, value); 
+    //    if(setVPos(value) != -1)
+    //      setIntegerParam(ADMinY, value); 
     //}
 
     //if(pasynUser->reason == ADSizeY)  
     //{ 
     //    setIntegerParam(ADSizeY, value);
     //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVSize", pasynUser->reason, value);
-    //    if(!setVSize(value)) setIntegerParam(ADSizeY, value); 
+    //    if(setVSize(value) != -1)
+    //      setIntegerParam(ADSizeY, value); 
     //}
 
-    if(pasynUser->reason == ADImageMode)    setIntegerParam(ADImageMode,    value);
-    if(pasynUser->reason == ADNumImages)    setIntegerParam(ADNumImages,    value);
-    if(pasynUser->reason == NDArrayCounter) setIntegerParam(NDArrayCounter, value);
+    if(pasynUser->reason == ADImageMode)
+        setIntegerParam(ADImageMode, value);
+    if(pasynUser->reason == ADNumImages)
+        setIntegerParam(ADNumImages, value);
+    if(pasynUser->reason == NDArrayCounter)
+        setIntegerParam(NDArrayCounter, value);
 
     if(pasynUser->reason == ADTriggerMode)
-        if(!setExposureControl(value)) setIntegerParam(ADTriggerMode, value);
+        if(setExposureControl(value) != -1)
+            setIntegerParam(ADTriggerMode, value);
 
     if(pasynUser->reason == cameraTrg)
-        if(!setTriggerControl(value)) setIntegerParam(cameraTrg, value);
+        if(setTriggerControl(value) != -1)
+            setIntegerParam(cameraTrg, value);
 
     if(pasynUser->reason == cameraTrgPolarity)
-        if(!setTriggerPolarity(value)) setIntegerParam(cameraTrgPolarity, value);
+        if(setTriggerPolarity(value) != -1)
+            setIntegerParam(cameraTrgPolarity, value);
 
     if(pasynUser->reason == cameraTrgGlobalExposure)
-        if(!setTriggerGlobalExposure(value)) setIntegerParam(cameraTrgGlobalExposure, value); 
+        if(setTriggerGlobalExposure(value) != -1)
+            setIntegerParam(cameraTrgGlobalExposure, value); 
+
+    if(pasynUser->reason == cameraReadStat)
+    {
+        // update camera connection status
+        int stat = getCameraStatus();
+        setIntegerParam(cameraStatus, stat);
+    }
 
     callParamCallbacks();
 
@@ -1710,13 +1778,14 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
 asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value)
 {
     static const char *functionName = "writeFloat64";
-    printf("#%d: (%s) function: %d, value %lf\n", cameraIndex, functionName, pasynUser->reason, value);
+    //printf("#%d: (%s) function: %d, value %lf\n", cameraIndex, functionName, pasynUser->reason, value);
 
     if(pasynUser->reason == ADAcquireTime) 
     {
         double tmpfloat64;
         setExposure(value);
-        if(!getActualExposure(&tmpfloat64)) setDoubleParam(ADAcquireTime, tmpfloat64);
+        if(getActualExposure(&tmpfloat64) != -1) 
+            setDoubleParam(ADAcquireTime, tmpfloat64);
     }
 
     callParamCallbacks();

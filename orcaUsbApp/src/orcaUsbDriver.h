@@ -17,6 +17,7 @@ class OrcaUsbDriver : public ADDriver {
 
         HDCAM hdcam;
         int cameraIndex;
+        int cameraAvailable;
 
         int findCameraById(const char* cameraId);
         int findCamera();
@@ -24,6 +25,7 @@ class OrcaUsbDriver : public ADDriver {
         int getCameraSerial(char *value);
         int getCameraFirmware(char *value);
         int getCameraInfo(char *value);
+        int getCameraStatus();
         int getActualExposure(double *value);
         int getEffectiveSizeX(int *value);
         int getEffectiveSizeY(int *value);
@@ -84,6 +86,8 @@ class OrcaUsbDriver : public ADDriver {
         int cameraTrg;
         int cameraTrgPolarity;
         int cameraTrgGlobalExposure;
+        int cameraReadStat;
+        int cameraStatus;
 
         int cameraImageProcTime;
         int cameraCallbackProcTime;
@@ -107,6 +111,8 @@ class OrcaUsbDriver : public ADDriver {
 #define OrcaCameraTrgString                 "CAMERA_TRG"
 #define OrcaCameraTrgPolarityString         "CAMERA_TRGPOL"
 #define OrcaCameraTrgGlobalExposureString   "CAMERA_TRGGLOBALEXP"
+#define OrcaCameraReadStatString            "CAMERA_READ_STAT"
+#define OrcaCameraStatusString              "CAMERA_STATUS"
 
 /* deugging */
 #define OrcaCameraImgProcTimeString         "CAMERA_IMGPROCTIME"
@@ -120,7 +126,7 @@ class OrcaUsbDriver : public ADDriver {
 
 //static ELLLIST          orcaList;
 //static epicsMutexId     initLock = NULL;
-static int              initialized = 0;
+static int              initCounter = 0;
 static DCAMAPI_INIT     apiinit;
 static int              deviceCount = 0;
 static int              openCameras[MAX_CAM_NUM];
