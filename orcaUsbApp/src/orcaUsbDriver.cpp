@@ -36,6 +36,8 @@ extern "C" {
 }
 
 // define default image size and offset
+// for multiple camera support size should be smaller than max size (2048)
+// this limitation is coming from experience with driver usage
 #define MIN_X   4
 #define MIN_Y   4
 #define SIZE_X  2040
@@ -1185,16 +1187,16 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
             devopen.size = sizeof(devopen);
             devopen.index = i;
 
-            printf( "#%d: Trying to open camera\n", i );
+            printf( "Dev idx #%d: Trying to open camera\n", i );
             err = dcamdev_open( &devopen );
             if( failed(err) )
             {
-                printf( "#%d: Error: opening camera\n", i );
+                printf( "Dev idx #%d: Error: opening camera\n", i );
                 return 0;
             }
             else
             {
-                printf( "#%d: Opened for ID check\n", i );
+                printf( "Dev idx #%d: Opened for ID check\n", i );
 
                 hdcam = devopen.hdcam;
                 char data[256];
@@ -1209,29 +1211,29 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: Model: %s\n", i, data);
+                    printf( "Dev idx #%d: Model: %s\n", i, data);
                 }
                 else
                 {
-                    printf( "#%d: Error: getting model\n", i );
+                    printf( "Dev idx #%d: Error: getting model\n", i );
                 }
 
                 param.iString = DCAM_IDSTR_BUS;
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: Bus: %s\n", i, data);
+                    printf( "Dev idx #%d: Bus: %s\n", i, data);
                 }
                 else
                 {
-                    printf( "#%d: Error: getting bus\n", i );
+                    printf( "Dev idx #%d: Error: getting bus\n", i );
                 }
 
                 param.iString = DCAM_IDSTR_CAMERAID;
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: ID: %s\n", i, data);
+                    printf( "Dev idx #%d: ID: %s\n", i, data);
                     // check camera serial number
                     if( strstr(data, cameraId) )
                     {
@@ -1239,7 +1241,7 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
                         cameraFound = 1;
                         openCameras[i] = 1;
 
-                        printf( "#%d: Camera with ID: %s found\n", i, cameraId );
+                        printf( "Dev idx #%d: Camera with ID: %s found\n", i, cameraId );
 
                         if (getSensorMode(&value) != -1)
                             printf( "Sensor Mode: %d\n", (int)value);
@@ -1281,23 +1283,23 @@ int OrcaUsbDriver::findCameraById(const char* cameraId)
                         // close camera with unmatching serial number 
                         dcamdev_close( hdcam );
                         hdcam = NULL;
-                        printf( "#%d: Unmatching camera closed\n", i );
+                        printf( "Dev idx #%d: Unmatching camera closed\n", i );
                     }
                 }
                 else
                 {
-                    printf( "#%d: Error: getting ID\n", i );
+                    printf( "Dev idx #%d: Error: getting ID\n", i );
 
                     // close camera if serial number could not be retreived
                     dcamdev_close( hdcam );
                     hdcam = NULL;
-                    printf( "#%d: Unidentified camera closed\n", i );
+                    printf( "Dev idx #%d: Unidentified camera closed\n", i );
                 }
             }
         }
         else
         {
-            printf( "#%d: Camera already open\n", i );
+            printf( "Dev idx #%d: Camera already in use\n", i );
         }
     }
 
@@ -1337,11 +1339,11 @@ int OrcaUsbDriver::findCamera()
             devopen.size = sizeof(devopen);
             devopen.index = i;
 
-            printf( "#%d: Trying to open camera\n", i );
+            printf( "Dev idx #%d: Trying to open camera\n", i );
             err = dcamdev_open( &devopen );
             if( failed(err) )
             {
-                printf( "#%d: Error: opening camera\n", i );
+                printf( "Dev idx #%d: Error: opening camera\n", i );
                 return 0;
             }
             else
@@ -1359,29 +1361,29 @@ int OrcaUsbDriver::findCamera()
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: Model: %s\n", i, data);
+                    printf( "Dev idx #%d: Model: %s\n", i, data);
                 }
                 else
                 {
-                    printf( "#%d: Error: getting model\n", i );
+                    printf( "Dev idx #%d: Error: getting model\n", i );
                 }
 
                 param.iString = DCAM_IDSTR_BUS;
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: Bus: %s\n", i, data);
+                    printf( "Dev idx #%d: Bus: %s\n", i, data);
                 }
                 else
                 {
-                    printf( "#%d: Error: getting bus\n", i );
+                    printf( "Dev idx #%d: Error: getting bus\n", i );
                 }
 
                 param.iString = DCAM_IDSTR_CAMERAID;
                 err = dcamdev_getstring( hdcam, &param );
                 if( !failed(err) )
                 {
-                    printf( "#%d: ID: %s\n", i, data);
+                    printf( "Dev idx #%d: ID: %s\n", i, data);
 
                     // register camera
                     cameraFound = 1;
@@ -1417,13 +1419,13 @@ int OrcaUsbDriver::findCamera()
                     // close camera if serial number could not be retreived
                     dcamdev_close( hdcam );
                     hdcam = NULL;
-                    printf( "#%d: Unidentified camera closed\n", i );
+                    printf( "Dev idx #%d: Unidentified camera closed\n", i );
                 }
             }
         }
         else
         {
-            printf( "#%d: Camera already in use\n", i );
+            printf( "Dev idx #%d: Camera already in use\n", i );
         }
     }
 
@@ -1475,10 +1477,12 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     //ellInit(&orcaList);           /* initialize linked list for camera information */
     initPerfMeasure();
 
+    // initCounter maintains driver instances: 
+    // i.e. how many times OrcaConfig called from st.cmd
+    // DCAM-API should be initialized once only on a computer
     if(initCounter == 0) 
     {
         /* first time to initialize */
-
         //initLock = epicsMutexCreate();  /* mutex lock for init */
 
         memset( &apiinit, 0, sizeof(apiinit) );
@@ -1502,20 +1506,6 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     hdcam = NULL;
 
-#if USE_SER_NUM
-    // enumarate cameras and find the one by cameraId    
-    cameraAvailable = findCameraById(cameraId);
-#else
-    // find next available camera    
-    cameraAvailable = findCamera();
-#endif
-
-    // set hdcam to -1 as NULL is accepted by dcamdev_getstring()
-    // dcamdev_getstring() can be called with the device index too
-    // and returns with values related to other camera with index 0
-    if (cameraAvailable == 0)
-        hdcam = (HDCAM) -1;
-
     // set index of camera accrding to driver instance index
     // even if no camera found for this instance
     // not available cameras will report error when called
@@ -1524,6 +1514,20 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     // increase counter to maintain number of driver instances
     // (i.e. number of attempts to connect new cameras from EPICS)
     initCounter++;
+
+#if USE_SER_NUM
+    // enumarate cameras and find the one by cameraId    
+    cameraAvailable = findCameraById(cameraId);
+#else
+    // find next available camera    
+    cameraAvailable = findCamera();
+#endif
+
+    // set hdcam to -1 as NULL (0) is accepted by dcamdev_getstring()
+    // dcamdev_getstring() can be called with the device index too
+    // and returns with values related to other camera with index 0
+    if (cameraAvailable == 0)
+        hdcam = (HDCAM) -1;
 
     //serialLock = epicsMutexMustCreate();
     dataEvent  = epicsEventMustCreate(epicsEventEmpty);
@@ -1652,7 +1656,7 @@ OrcaUsbDriver::~OrcaUsbDriver()
     printf( "IOC shutdown\n" );
 
     // close device
-    if (hdcam != NULL)
+    if (hdcam != NULL || hdcam != (HDCAM) -1)
     {
         dcamdev_close( hdcam );
         printf( "Camera %d closed on exit\n", cameraIndex );
@@ -1674,12 +1678,17 @@ OrcaUsbDriver::~OrcaUsbDriver()
 asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
 {
     static const char *functionName = "writeInt32";
-    //printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
+
+    // print out only if not periodic camera status request    
+    if(pasynUser->reason != cameraReadStat)
+    {
+        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
+    }
 
     if(pasynUser->reason == ADAcquire) 
     {
         // acquire on connected cameras only
-        if (openCameras[cameraIndex])
+        if (cameraAvailable != 0)
         {
             if(value && !acquire) 
             {

@@ -71,9 +71,6 @@ class OrcaUsbDriver : public ADDriver {
         int getCamIndex(void);
 
     protected:
-        //PdvDev *pdv_p;
-        //EdtDev *edt_p;
-
         //epicsMutexId serialLock;
         epicsEventId dataEvent;
 
