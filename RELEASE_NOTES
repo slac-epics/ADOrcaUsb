@@ -1,5 +1,8 @@
 RELEASE_NOTES for orcaUsbApp (Orca-Flash Camera USB Driver)
 ----------------------------------------------------
+R0.1.1:   2023-02-21 Bruce Hill
+          Updated to ADCore/R3.10-1.1.0
+
 R0.1.0:   2023-02-12   J. Vamosi
           Added camera status check
 
