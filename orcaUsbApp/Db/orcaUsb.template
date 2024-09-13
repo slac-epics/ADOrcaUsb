@@ -37,10 +37,10 @@ record(mbbi, "$(P)$(R)CAMERA_STATUS")
 {
    field(DTYP, "asynInt32")
    field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_STATUS")
-   field(PINI, "NO")
-   field(ZRST, "Off")
+   field(ZRST, "Disconnected")
    field(ZRVL, "0")
-   field(ONST, "On")
+   field(ZRSV, "MAJOR")
+   field(ONST, "Connected")
    field(ONVL, "1")
    field(SCAN, "I/O Intr")
 }

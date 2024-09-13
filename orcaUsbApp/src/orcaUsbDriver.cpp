@@ -25,6 +25,10 @@
 
 #include <epicsExport.h>
 
+namespace {
+    const std::string driverName = "OrcaUsbDriver";
+}
+
 extern "C" {
 #include "perfMeasure.h"
 //#include "edtinc.h"
@@ -63,7 +67,6 @@ extern "C" {
 
 #include "orcaUsbDriver.h"
 
-//static const char *driverName = "OrcaUsb";
 
 static void dataTaskC(void *drvPvt)
 {
@@ -210,10 +213,15 @@ int OrcaUsbDriver::getCameraInfo(char *value)
     return ret;
 }
 
-int OrcaUsbDriver::getCameraStatus()
-{
+
+int OrcaUsbDriver::getCameraStatus() {
+/**********************************************************************
+    A somewhat ugly routine to determine if the camera is connected.
+**********************************************************************/
+    std::string functionName = "getCameraStatus";
     DCAMERR err;
     char data[16];
+    double alive = -1.0, temp = -1.0;
 
     DCAMDEV_STRING param;
     memset( &param, 0, sizeof(param) );
@@ -222,10 +230,19 @@ int OrcaUsbDriver::getCameraStatus()
     param.textbytes = sizeof(data);
     param.iString = DCAM_IDSTR_CAMERAID;
 
-    err = dcamdev_getstring( hdcam, &param );
+    dcamdev_getstring(hdcam, &param);
+    dcamprop_getvalue(hdcam, DCAM_IDPROP_SENSORTEMPERATURE, &temp);
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SYSTEM_ALIVE, &alive);
 
-    return !failed(err);
+    //printf("getCameraStatus: alive=%f, err=0x%x\n", alive, err);
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: port %s: alive=%f, temp=%f, err=0x%x\n", 
+            driverName.c_str(), functionName.c_str(), port_name.c_str(), alive, temp, err);
+
+    bool ret = ((int)alive == 2)?1:0;
+    return ret;
 }
+
 
 int OrcaUsbDriver::getActualExposure(double *value)
 {
@@ -1466,7 +1483,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         : ADDriver(portName, 1, NUM_ORCA_DET_PARAMS, maxBuffers, maxMemory,
                0, 0,               /* No interfaces beyond those set in ADDriver.cpp */
                ASYN_CANBLOCK, 1,   /* ASYN_CANBLOCK=1, ASYN_MULTIDEVICE=0, autoConnect=1 */
-               priority, stackSize)
+               priority, stackSize),
+        port_name(portName)
 {
     char    str_message[128];
     double  tmpfloat64;
@@ -1786,7 +1804,7 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value)
  */
 asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value)
 {
-    static const char *functionName = "writeFloat64";
+    //static const char *functionName = "writeFloat64";
     //printf("#%d: (%s) function: %d, value %lf\n", cameraIndex, functionName, pasynUser->reason, value);
 
     if(pasynUser->reason == ADAcquireTime) 

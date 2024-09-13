@@ -9,6 +9,7 @@
 
 class OrcaUsbDriver : public ADDriver {
     private:
+        std::string port_name;
         int acquire;
         int exit_loop;
         int binX, binY, minX, minY, sizeX, sizeY, maxSizeX, maxSizeY;
