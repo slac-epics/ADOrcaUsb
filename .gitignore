@@ -16,7 +16,7 @@ dbd/
 display/
 restore/
 O.*/
-
+include/
 
 # Linux 
 *~
@@ -24,4 +24,6 @@ O.*/
 
 # Misc
 *.old
+*.bak
+*.swp
 
