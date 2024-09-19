@@ -1,3 +1,4 @@
+
 record(stringin, "$(P)$(R)CAMERA_NAME")
 {
    field(DTYP, "asynOctetRead")
@@ -126,60 +127,5 @@ record(mbbi, "$(P)$(R)CAMERA_TRGGLOBALEXP_RBV")
    field(FRST, "Global Reset")
    field(FRVL, "5")
    field(SCAN, "I/O Intr")
-}
-
-
-record(ai, "$(P)$(R)CAMERA_IMGPROCTIME_RBV")
-{
-   field(DTYP, "asynFloat64")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_IMGPROCTIME")
-   field(PREC, "3")
-   field(SCAN, "I/O Intr")
-   field(EGU, "micro-seconds")
-}
-
-record(ai, "$(P)$(R)CAMERA_CALLBACKPROCTIME_RBV")
-{
-   field(DTYP, "asynFloat64")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_CBPROCTIME")
-   field(PREC, "3")
-   field(SCAN, "I/O Intr")
-   field(EGU, "micro-seconds")
-}
-
-record(ai, "$(P)$(R)CAMERA_WAITPROCTIME_RBV")
-{
-   field(DTYP, "asynFloat64")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_WAITPROCTIME")
-   field(PREC, "3")
-   field(SCAN, "I/O Intr")
-   field(EGU, "micro-seconds")
-}
-
-record(ai, "$(P)$(R)CAMERA_STARTPROCTIME_RBV")
-{
-   field(DTYP, "asynFloat64")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_STARTPROCTIME")
-   field(PREC, "3")
-   field(SCAN, "I/O Intr")
-   field(EGU, "micro-seconds")
-}
-
-record(ai, "$(P)$(R)CAMERA_EVRELLAPSETIME_RBV")
-{
-   field(DTYP, "asynFloat64")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_ELLAPSETIME")
-   field(PREC, "3")
-   field(SCAN, "I/O Intr")
-   field(EGU, "micro-seconds")
-}
-
-record(ai, "$(P)$(R)CAMERA_LOSTFRAMESYNC_RBV")
-{
-   field(DTYP, "asynInt32")
-   field(INP,  "@asyn($(PORT),$(ADDR),$(TIMEOUT))CAMERA_LOSTFRAMESYNC")
-   field(PREC, "0")
-   field(SCAN, "I/O Intr")
-   field(EGU, "Counter")
 }
 

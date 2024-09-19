@@ -4,6 +4,8 @@
  * Author Janos, Vamosi
  * Date   Feb-28-2021
  *
+ * Heavily modified: M. Dunning (mdunning) 19-Sep-2024
+ *
  */
 
 #include <stdio.h>
@@ -12,14 +14,12 @@
 #include <string>
 #include <unistd.h>
 
-#include <ellLib.h>
 #include <epicsTime.h>
 #include <epicsThread.h>
 #include <epicsEvent.h>
 #include <epicsString.h>
 #include <iocsh.h>
 #include <epicsExit.h>
-#include <epicsMutex.h>
 #include <epicsEvent.h>
 #include <epicsExit.h>
 #include <epicsExport.h>
@@ -32,7 +32,7 @@ namespace {
 }
 
 extern "C" {
-#include "perfMeasure.h"
+//#include "perfMeasure.h"
 //#include "edtinc.h"
 //int deIntlv_MidTop_Line16(u_short *src, int width, int rows, u_short *dest);
 //int pdv_query_serial(PdvDev * pdv_p, char *cmd, char **resp);
@@ -62,10 +62,10 @@ extern "C" {
  */
 
 // 0: call dcambuf_lockframe to access image, 1: call dcambuf_copyframe to access image
-#define USE_COPYFRAME   0
+#define USE_COPYFRAME 1
 
 // 0: don't use serial number to identify camera, 1: use serial number to identify camera
-#define USE_SER_NUM   1
+#define USE_SER_NUM 1
 
 
 static void dataTaskC(void *drvPvt) {
@@ -85,9 +85,8 @@ static void exitHookC(void *drvPvt) {
  * \params[in]: pointer to the OrcaUsb object created in OrcaUsbConfig
 **********************************************************************/
     OrcaUsbDriver *pOrca = (OrcaUsbDriver*) drvPvt;
-
-    printf("#%d: Calling exit hook for OrcaUsb driver\n", pOrca->getCamIndex());
-    pOrca->exitHook();
+    printf("#%d: Calling exit hook for OrcaUsb driver...\n", pOrca->getCamIndex());
+    delete pOrca;
 }
 
 
@@ -111,45 +110,40 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
                0, 0,               /* No interfaces beyond those set in ADDriver.cpp */
                ASYN_CANBLOCK, 1,   /* ASYN_CANBLOCK=1, ASYN_MULTIDEVICE=0, autoConnect=1 */
                priority, stackSize),
-        port_name(portName)
+        port_name(portName),
+        acquire(false),
+        exit_loop(false),
+        exited(false),
+        hdcam(NULL)
 {
     char    str_message[128];
     double  tmpfloat64;
     int     tmpint32;
-    int     i;
     DCAMERR err;
-
-    //ellInit(&orcaList);           /* initialize linked list for camera information */
-    initPerfMeasure();
 
     // initCounter maintains driver instances: 
     // i.e. how many times OrcaConfig called from st.cmd
     // DCAM-API should be initialized once only on a computer
-    if(initCounter == 0) 
-    {
-        /* first time to initialize */
-        //initLock = epicsMutexCreate();  /* mutex lock for init */
-
-        memset( &apiinit, 0, sizeof(apiinit) );
+    if (initCounter == 0) {
+        memset(&apiinit, 0, sizeof(apiinit));
         apiinit.size = sizeof(apiinit);
 
         // initialize DCAM-API
-        err = dcamapi_init( &apiinit );
+        err = dcamapi_init(&apiinit);
 
-        if( failed(err) )
-        {
-            printf( "Error: initializing API\n" );
+        if (failed(err)) {
+            printf("Error: initializing API\n");
             return;
         }
 
-        for (i=0; i<MAX_CAM_NUM; i++)
+        for (int i=0; i<MAX_CAM_NUM; i++) {
             openCameras[i] = 0;
+        }
 
         deviceCount = apiinit.iDeviceCount;
-        printf( "Found %d device(s).\n", deviceCount );
+        printf("Found %d device(s).\n", deviceCount);
     }
 
-    hdcam = NULL;
 
     // set index of camera accrding to driver instance index
     // even if no camera found for this instance
@@ -175,9 +169,9 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         hdcam = (HDCAM) -1;
 
     //serialLock = epicsMutexMustCreate();
-    dataEvent  = epicsEventMustCreate(epicsEventEmpty);
+    dataEvent = epicsEventMustCreate(epicsEventEmpty);
 
-    // Create PV Params
+    // Asyn parameter library
     // Plugins need to call the createParam() function in their constructor 
     // if they have additional parameters beyond those in the asynPortDriver or NDPluginDriver base classes
     createParam(OrcaCameraNameString,               asynParamOctet, &cameraName);
@@ -190,16 +184,6 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     createParam(OrcaCameraReadStatString,           asynParamInt32, &cameraReadStat);
     createParam(OrcaCameraStatusString,             asynParamInt32, &cameraStatus);
 
-    createParam(OrcaCameraImgProcTimeString,   asynParamFloat64, &cameraImageProcTime);
-    createParam(OrcaCameraCBProcTimeString,    asynParamFloat64, &cameraCallbackProcTime);
-    createParam(OrcaCameraWaitProcTimeString,  asynParamFloat64, &cameraWaitProcTime);
-    createParam(OrcaCameraStartProcTimeString, asynParamFloat64, &cameraStartProcTime);
-    createParam(OrcaCameraEllapseTimeString,   asynParamFloat64, &cameraEllapseTime);
-
-    createParam(OrcaCameraLostFrameSyncString, asynParamInt32, &cameraLostFrameSyncCounter);
-
-    acquire = 0;
-    exit_loop = 0;
 
     setStringParam(ADManufacturer, "Hamamatsu");
 
@@ -246,8 +230,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     if(getEffectiveSizeX(&tmpint32) != -1)
     {
         // set base class parameter default value        
-        setIntegerParam(ADMaxSizeX, tmpint32);
         maxSizeX = tmpint32;
+        setIntegerParam(ADMaxSizeX, maxSizeX);
     }
     else
     {
@@ -259,8 +243,8 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     if(getEffectiveSizeY(&tmpint32) != -1)
     {
         // set base class parameter default value        
-        setIntegerParam(ADMaxSizeY, tmpint32);
         maxSizeY = tmpint32;
+        setIntegerParam(ADMaxSizeY, maxSizeY);
     }
     else
     {
@@ -270,7 +254,10 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     // set image size and offset
     // image size should be smaller than max to support multiple cameras
-    minX=MIN_X; sizeX=SIZE_X; minY=MIN_Y; sizeY=SIZE_Y;
+    minX = MIN_X;
+    sizeX = SIZE_X;
+    minY = MIN_Y;
+    sizeY = SIZE_Y;
     
     // set base class parameter default values        
     setIntegerParam(ADMinX, minX);
@@ -298,13 +285,20 @@ OrcaUsbDriver::~OrcaUsbDriver() {
 /**********************************************************************
     OrcaUsb Destructor. Called by the exitHookC function when IOC is shut down.
 **********************************************************************/
-    printf( "IOC shutdown\n" );
+    printf("~OrcaUsbDriver...\n");
 
-    // close device
-    if (hdcam != NULL || hdcam != (HDCAM) -1)
-    {
-        dcamdev_close( hdcam );
-        printf( "Camera %d closed on exit\n", cameraIndex );
+    this->lock();
+    exit_loop = true;
+    acquire = false;
+    epicsEventSignal(dataEvent);
+    if (hdcam != NULL) {
+        dcamdev_close(hdcam);
+        printf("Camera %d closed on exit\n", cameraIndex);
+    }
+    this->unlock();
+
+    while (!exited) {
+        epicsThreadSleep(0.2);
     }
 }
 
@@ -527,26 +521,23 @@ int OrcaUsbDriver::getEffectiveSizeX(int *value) {
 int OrcaUsbDriver::getRowBytes(int *value) {
 /**********************************************************************
 **********************************************************************/
-    int ret = 0;
     DCAMERR err;
     double data;
 
-    if(!value)
+    if (!value) {
         return -1;
-
-    err = dcamprop_getvalue( hdcam, DCAM_IDPROP_IMAGE_ROWBYTES, &data );
-    if( !failed(err) )
-    {
-        *value = data;
     }
-    else
-    {
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_IMAGE_ROWBYTES, &data);
+    if (!failed(err)) {
+        *value = data;
+    } else {
         //printf( "Error: get DCAM_IDPROP_IMAGE_ROWBYTES\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_IMAGE_ROWBYTES)\n");
-        ret = -1;
+        return -1;
     }
 
-    return ret;
+    return 0;
 }
 
 
@@ -1160,56 +1151,50 @@ int OrcaUsbDriver::setBinning(int binning) {
 int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize) {
 /**********************************************************************
 **********************************************************************/
+    const std::string functionName = "getSubarray";
     DCAMERR err;
     double data;
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, &data);
-
-    if( !failed(err) )
-    {
+    if (!failed(err)) {
         *hpos = data;
-    }
-    else
-    {
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHPOS)\n");
         *hpos = MIN_X;
-    }
-
-    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, &data);
-
-    if( !failed(err) )
-    {
-        *hsize = data;
-    }
-    else
-    {
-        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHSIZE)\n");
-        *hsize = SIZE_X;
+        return -1;
     }
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, &data);
-
-    if( !failed(err) )
-    {
+    if (!failed(err)) {
         *vpos = data;
-    }
-    else
-    {
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVPOS)\n");
         *vpos = MIN_Y;
+        return -1;
+    }
+
+    err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, &data);
+    if (!failed(err)) {
+        *hsize = data;
+    } else {
+        printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYHSIZE)\n");
+        *hsize = SIZE_X;
+        return -1;
     }
 
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, &data);
-
-    if( !failed(err) )
-    {
+    if (!failed(err)) {
         *vsize = data;
-    }
-    else
-    {
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SUBARRAYVSIZE)\n");
         *vsize = SIZE_Y;
+        return -1;
     }
+
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: port %s: hpos=%d, hsize=%d, vpos=%d, vsize=%d\n", 
+            driverName.c_str(), functionName.c_str(), port_name.c_str(),
+            *hpos, *hsize, *vpos, *vsize);
 
     return 0;
 }
@@ -1218,11 +1203,16 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize) {
 int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize) {
 /**********************************************************************
 **********************************************************************/
+    const std::string functionName = "setSubarray";
     DCAMERR err;
 
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: port %s: hpos=%d, hsize=%d, vpos=%d, vsize=%d\n", 
+            driverName.c_str(), functionName.c_str(), port_name.c_str(),
+            hpos, hsize, vpos, vsize);
 
-    if(failed(err))
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
+    if (failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
         printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
@@ -1230,45 +1220,35 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize) {
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, hpos);
-
-    if(failed(err))
-    {
+    if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
         printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
-        return -1;
-    }
-
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, vpos);
-
-    if(failed(err))
-    {
+    if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
         printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
+    if (failed(err)) {
+        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
+        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        return -1;
+    }
 
-    if(failed(err))
-    {
+    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
+    if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
         printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
-
-    if(failed(err))
-    {
+    if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
         printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
         return -1;
@@ -1320,7 +1300,6 @@ int OrcaUsbDriver::setHSize(int hsize) {
     DCAMERR err;
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
-
     if(failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
@@ -1431,19 +1410,82 @@ int OrcaUsbDriver::getCamIndex() {
 
 asynStatus OrcaUsbDriver::getGeometry() {
 /**********************************************************************
+    Get image parameters from base class and validate.
 **********************************************************************/
+    const std::string functionName = "getGeometry";
     int status = asynSuccess;
 
-    // get image parameters from base class and set variables
-    status |= getIntegerParam(ADBinX, &binX); if(binX<1) {binX =1; status |= setIntegerParam(ADBinX, binX);}
-    status |= getIntegerParam(ADBinY, &binY); if(binY<1) {binY =1; status |= setIntegerParam(ADBinY, binY);}
-    status |= getIntegerParam(ADMinX, &minX);
-    status |= getIntegerParam(ADMinY, &minY);
-    status |= getIntegerParam(ADSizeX, &sizeX);
-    status |= getIntegerParam(ADSizeY, &sizeY);
     status |= getIntegerParam(ADMaxSizeX, &maxSizeX);
     status |= getIntegerParam(ADMaxSizeY, &maxSizeY);
 
+    status |= getIntegerParam(ADBinX, &binX);
+    if (binX < 1) {
+        binX = 1;
+        status |= setIntegerParam(ADBinX, binX);
+    }
+
+    status |= getIntegerParam(ADBinY, &binY);
+    if (binY < 1) {
+        binY = 1;
+        status |= setIntegerParam(ADBinY, binY);
+    }
+
+    status |= getIntegerParam(ADMinX, &minX);
+    if (minX < 0) {
+        minX = 0; 
+        status |= setIntegerParam(ADMinX, minX);
+    } else if (minX > maxSizeX-1) {
+        minX = maxSizeX-1;
+        status |= setIntegerParam(ADMinX, minX);
+    }
+
+    status |= getIntegerParam(ADMinY, &minY);
+    if (minY < 0) {
+        minY = 0; 
+        status |= setIntegerParam(ADMinY, minY);
+    } else if (minY > maxSizeY-1) {
+        minY = maxSizeY-1;
+        status |= setIntegerParam(ADMinY, minY);
+    }
+
+    status |= getIntegerParam(ADSizeX, &sizeX);
+    if (minX+sizeX > maxSizeX) {
+        sizeX = maxSizeX - minX;
+        status |= setIntegerParam(ADSizeX, sizeX);
+        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "%s::%s: port %s: sizeX changed to %d\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeX);
+    }
+    if (sizeX == 0) {
+        sizeX = 1;
+        status |= setIntegerParam(ADSizeX, sizeX);
+    }
+
+    status |= getIntegerParam(ADSizeY, &sizeY);
+    if (minY+sizeY > maxSizeY) {
+        sizeY = maxSizeY - minY;
+        status |= setIntegerParam(ADSizeY, sizeY);
+        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "%s::%s: port %s: sizeY changed to %d\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeY);
+    }
+    if (sizeY == 0) {
+        sizeY = 1;
+        status |= setIntegerParam(ADSizeY, sizeY);
+    }
+
+    if (asynStatus(status) != asynSuccess) {
+        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "%s::%s: port %s: Error setting parameter\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str());
+    }
+
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: port %s: minX=%d, minY=%d, sizeX=%d, sizeY=%d, binX=%d, binY=%d\n", 
+            driverName.c_str(), functionName.c_str(), port_name.c_str(),
+            minX, minY, sizeX, sizeY, binX, binY);
+
+    callParamCallbacks();
     return asynStatus(status);
 }
 
@@ -1759,171 +1801,128 @@ void OrcaUsbDriver::dataTask(void) {
 /**********************************************************************
     Main data task; runs in a separate thread.
 **********************************************************************/
+    std::string functionName = "dataTask";
     DCAMERR err;
-    int printDebugMsg = 0;
-    char *debug;
-    int ndims = 2;
     size_t dims[2] = {SIZE_X, SIZE_Y};
     NDArray *pArray = NULL;
-    unsigned short *pData = NULL;
-    int width, height, rowbytes;
+    int rowbytes;
     int imageCounter;
     int hp, hs, vp, vs;
-    //unsigned evr_ticks;
 
-    DCAMWAIT_OPEN waitopen;
-    HDCAMWAIT hwait;
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: %s: Started dataTask...\n",
+            driverName.c_str(), functionName.c_str(), port_name.c_str());
 
-    DCAMBUF_FRAME bufframe;
-    memset(&bufframe, 0, sizeof(bufframe));
-    bufframe.size = sizeof(bufframe);
-
-    getRowBytes(&rowbytes);
-    width = sizeX;
-    height = sizeY;
-
-    getSubarray(&hp, &hs, &vp, &vs);
-    printf("Image position and size: left: %d, width: %d, top: %d, height: %d \n", hp, hs, vp, vs); 
-
-    perfParm_ts *perf_wait     = makePerfMeasure((char*)"WAIT", (char*)"Wait Image");
-    perfParm_ts *perf_start    = makePerfMeasure((char*)"START", (char*)"Start Image");
-    perfParm_ts *perf_proc     = makePerfMeasure((char*)"PROCESS", (char*)"Process Image");
-    perfParm_ts *perf_callback = makePerfMeasure((char*)"CALLBACK", (char*)"Callback Only");
-
-    printf("#%d: Start Acquire Thread\n", cameraIndex);
-
-    memset(&waitopen, 0, sizeof(waitopen));
-    waitopen.size  = sizeof(waitopen);
-    waitopen.hdcam = hdcam;
-
-    err = dcamwait_open(&waitopen);
-    if (failed(err)) {
-        //printf("#%d: Error: dcamwait_open()\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "dcamwait_open()\n");
-        //return;
-    }
-
-    hwait = waitopen.hwait;
-
-    err = dcambuf_alloc(hdcam, 1);
-    if (failed(err)) {
-        //printf("#%d: Error: dcambuf_alloc()\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "dcambuf_alloc()\n");
-        //return;
-    }
-
-    while (!exit_loop) { /* infinte loop */
-        debug = getenv("ORCA_DEBUG");
-        if (debug != NULL) {
-            if (strcmp(debug, "1") == 0 || strcmp(debug, "ON") == 0)
-                printDebugMsg = 1;
-            else
-                printDebugMsg = 0;
-        } else {
-            printDebugMsg = 0;
-        }
-
-        printf("#%d: Waiting for event...\n", cameraIndex);
+    this->lock();
+    while (!exit_loop) {
+        // Wait for an event signal (e.g. acquisition)
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: %s: Waiting for dataEvent...\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str());
+        this->unlock();
         epicsEventWait(dataEvent);
-        printf("#%d: Event arrived\n", cameraIndex);
-
+        this->lock();
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: %s: dataEvent triggered...\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str());
         if (exit_loop) break;
 
-        {  /* prepare the imageMode */
-            int imageMode, numImages;
-            getIntegerParam(ADImageMode, &imageMode);
-            getIntegerParam(ADNumImages, &numImages);
-
-            switch(imageMode) {
-                case ADImageSingle:
-                    this->framesRemaining = 1;
-                break;
-                case ADImageMultiple:
-                    this->framesRemaining = numImages;
-                break;
-                case ADImageContinuous:
-                    this->framesRemaining = -1;
-                break;
-            }
+        // Prepare image mode
+        int imageMode, numImages;
+        getIntegerParam(ADImageMode, &imageMode);
+        getIntegerParam(ADNumImages, &numImages);
+        if (imageMode == ADImageSingle) {
+            this->framesRemaining = 1;
+        } else if (imageMode == ADImageMultiple) {
+            this->framesRemaining = numImages;
+        } else {
+            this->framesRemaining = -1;
         }
 
-        setIntegerParam(ADStatus, ADStatusAcquire);
-        printf("#%d: Start Acquire Loop\n", cameraIndex);
-
-        //getGeometry();
-        //printf("#%d: Set geometry dX: %d, X: %d, dY: %d, Y: %d\n", cameraIndex, minX, sizeX, minY, sizeY    );
-        //setSubarray(minX, sizeX, minY, sizeY);
-
-        // iFrame: set to index of image buffer, can be set to -1 to retrieve latest captured image
-        bufframe.iFrame = 0;
-
-        // buf: for lockframe() returns address of image data, for copyframe() set to destination buffer
-        // rowbytes: for lockframe() returns byte size offset value between start of two lines, for copyframe() set offset
-        // type: for lockframe() returns DCAM_PIXELTYPE value of image, for copyframe() set this to 0
-        // width: for lockframe() returns number of horizontal pixels, for copyframe() set to number of horizontal pixels
-        // height: for lockframe() returns number of vertical pixels, for copyframe() set to number of vertical pixels
-        // left: for lockframe() set to 0, for copyframe() set to left offset of source image
-        // top: for lockframe() set to 0, for copyframe() set to top offset of source image
-        // timestamp: returns time stamp of specified frame
-        // framestamp: returns frame stamp of specified frame
-        // camerastamp: returns camera stamp of HDCAM device 
-    #if USE_COPYFRAME
-        pData = new unsigned short[sizeX*sizeY];
-
-	    bufframe.buf	  = pData;
-	    bufframe.rowbytes = rowbytes;
-	    bufframe.width	  = width;
-	    bufframe.height	  = height;
-	    bufframe.left	  = minX;
-	    bufframe.top	  = minY;
-    #endif
-
-        //printf ("pData: %p\n", pData); 
-        //if (pData == NULL)
-        //    return;
-
-        dims[0] = width; dims[1] = height;
-
-        //printf ("bookmark #1\n"); 
-
+        // Get/set image parameters
+        getGeometry();
+        if (setSubarray(minX, sizeX, minY, sizeY) == -1) {
+            // Failed to set subArray
+            acquire = false;
+            setIntegerParam(ADAcquire, acquire);
+            setIntegerParam(ADStatus, ADStatusError);
+            setStringParam(ADStatusMessage, "Stopped acquisition");
+            callParamCallbacks();
+            asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                    "%s::%s: %s: Stopped acquisition: setSubarray failed\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str());
+            break;
+        }
+        if (getSubarray(&hp, &hs, &vp, &vs) == 0) {
+            // Got parameters from camera, update AD values
+            setIntegerParam(ADMinX, hp);
+            setIntegerParam(ADSizeX, hs);
+            setIntegerParam(ADMinY, vp);
+            setIntegerParam(ADSizeY, vs);
+        }
         setIntegerParam(NDDataType, NDUInt16);
         setIntegerParam(NDArrayCallbacks, 1);
-        setIntegerParam(NDArraySizeX, width);
-        setIntegerParam(NDArraySizeY, height);
-        setIntegerParam(NDArraySize, width*height);
+        setIntegerParam(NDArraySizeX, sizeX);
+        setIntegerParam(NDArraySizeY, sizeY);
+        setIntegerParam(NDArraySize, sizeX*sizeY*sizeof(epicsUInt16));
 
-        // reset counters
+        // Reset counters
         setIntegerParam(ADNumImagesCounter, 0);
         setIntegerParam(ADNumExposuresCounter, 0);
         callParamCallbacks();
 
-        err = dcamcap_start(hdcam, DCAMCAP_START_SEQUENCE);
+        // Configure camera event wait
+        DCAMWAIT_OPEN waitopen;
+        memset(&waitopen, 0, sizeof(waitopen));
+        waitopen.size  = sizeof(waitopen);
+        waitopen.hdcam = hdcam;
+        err = dcamwait_open(&waitopen);
         if (failed(err)) {
-            //printf("#%d: Error: dcamcap_start()\n", cameraIndex);
-            if (printDebugMsg) {
-                printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
-            }
-            //return;
+            printCameraError(cameraIndex, hdcam, err, "dcamwait_open()\n");
+            // TODO: clean up on failure
+            return;
+        }
+        HDCAMWAIT hwait = waitopen.hwait;
+
+        // Allocate camera buffers
+        err = dcambuf_alloc(hdcam, 10);
+        if (failed(err)) {
+            printCameraError(cameraIndex, hdcam, err, "dcambuf_alloc()\n");
+            return;
         }
 
-        //printf ("pData: %p, rowbytes: %d, left: %d, top: %d, width: %d, height: %d \n", 
-        //        bufframe.buf, bufframe.rowbytes, bufframe.left, bufframe.top, bufframe.width, bufframe.height); 
+        // Configure camera capturing
+        err = dcamcap_start(hdcam, DCAMCAP_START_SEQUENCE);
+        if (failed(err)) {
+            printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
+            return;
+        }
+
+        // Enable camera event wait
+        DCAMWAIT_START waitstart;
+        memset(&waitstart, 0, sizeof(waitstart));
+        waitstart.size      = sizeof(waitstart);
+        waitstart.eventmask = DCAMWAIT_CAPEVENT_FRAMEREADY;
+        waitstart.timeout   = 5000;
 
         while(acquire) {
-            startPerfMeasure(perf_wait);
-
-            DCAMWAIT_START waitstart;
-            memset(&waitstart, 0, sizeof(waitstart));
-            waitstart.size      = sizeof(waitstart);
-            waitstart.eventmask = DCAMWAIT_CAPEVENT_FRAMEREADY;
-            waitstart.timeout   = 1000;
-
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: Acquire loop...\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str());
+            this->unlock();
             err = dcamwait_start(hwait, &waitstart);
+            this->lock();
             if (failed(err)) {
-                if (printDebugMsg) {
-                    printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
-                }
-                continue;
+                printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
+                acquire = 0;
+                setIntegerParam(ADAcquire, acquire);
+                setIntegerParam(ADStatus, ADStatusError);
+                setStringParam(ADStatusMessage, "Stopped acquisition");
+                callParamCallbacks();
+                dcamcap_stop( hdcam );
+                dcambuf_release( hdcam );
+                dcamwait_close( hwait );
+                break;
             }
 
             DCAMCAP_TRANSFERINFO captransferinfo;
@@ -1932,61 +1931,65 @@ void OrcaUsbDriver::dataTask(void) {
 
             err = dcamcap_transferinfo(hdcam, &captransferinfo);
             if (failed(err)) {
-                if (printDebugMsg) {
-                    printCameraError(cameraIndex, hdcam, err, "dcamcap_transferinfo()\n");
-                }
+                printCameraError(cameraIndex, hdcam, err, "dcamcap_transferinfo()\n");
                 continue;
             }
 
             if (captransferinfo.nFrameCount < 1) {
-                //printf("#%d: Error: no image captured\n", cameraIndex);
+                asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                        "%s::%s: %s: Error: no image captured\n",
+                        driverName.c_str(), functionName.c_str(), port_name.c_str());
                 continue;
-            } else {
-                //printf("#%d: got %d images\n", cameraIndex, captransferinfo.nFrameCount);
             }
 
-            endPerfMeasure(perf_wait);
-
-            if (!acquire) continue;
+            if (!acquire) {
+                continue;
+            }
 
             // Access image
+            DCAMBUF_FRAME bufframe;
+            memset(&bufframe, 0, sizeof(bufframe));
+            bufframe.size = sizeof(bufframe);
+            // iFrame: set to index of image buffer, can be set to -1 to retrieve latest captured image
+            bufframe.iFrame = -1;
+            getRowBytes(&rowbytes);
+            int esizex, esizey;
+            getEffectiveSizeX(&esizex);
+            getEffectiveSizeY(&esizey);
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: sizeX=%d, sizeY=%d, esizex=%d, esizey=%d, rowbytes=%d\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(),
+                    sizeX, sizeY, esizex, esizey, rowbytes);
+
+    
+            int ndims = 2;
+            dims[0] = sizeX;
+            dims[1] = sizeY;
+            pArray = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, 0, NULL);
+
 #if USE_COPYFRAME
+            bufframe.buf	  = (void*)pArray->pData;
+            bufframe.rowbytes = rowbytes;
+            bufframe.left	  = 0;
+            bufframe.top	  = 0;
+            bufframe.width	  = sizeX;
+            bufframe.height	  = sizeY;
+
             err = dcambuf_copyframe(hdcam, &bufframe);
             if (failed(err)) {
-                if (printDebugMsg) {
-                    printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
-                }
+                printCameraError(cameraIndex, hdcam, err, "dcambuf_copyframe()\n");
             }
-
 #else
 		    err = dcambuf_lockframe(hdcam, &bufframe);
 		    if (failed(err)) {
-                if (printDebugMsg)
-                    printCameraError(cameraIndex, hdcam, err, "dcambuf_lockframe()\n");
+                printCameraError(cameraIndex, hdcam, err, "dcambuf_lockframe()\n");
 		    }
-
-            //printf ("After lockframe: pData: %p, rowbytes: %d, left: %d, top: %d, width: %d, height: %d \n", 
-            //        bufframe.buf, bufframe.rowbytes, bufframe.left, bufframe.top, bufframe.width, bufframe.height); 
+            // TODO: add ROI code
 #endif
             
-            startPerfMeasure(perf_start);
-            endPerfMeasure(perf_start);
-
-            startPerfMeasure(perf_proc);
-            
-            this->lock();
-            pArray = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, 0, NULL);
-            pArray->ndims           = 2;
-            pArray->dims[0].size    = width;
-            pArray->dims[0].offset  = minX;
-            pArray->dims[0].binning = binX;
-            pArray->dims[1].size    = height;
-            pArray->dims[1].offset  = minY;
-            pArray->dims[1].binning = binY;
             updateTimeStamp(&pArray->epicsTS);
             pArray->uniqueId = PULSEID(pArray->epicsTS);
-
-            memcpy(pArray->pData, bufframe.buf, width*height*sizeof(unsigned short));
+            getAttributes(pArray->pAttributeList);
 
             {   /* provide POSIX timestamp for the image native timestamp */
                 timespec ts;
@@ -1994,12 +1997,7 @@ void OrcaUsbDriver::dataTask(void) {
                 pArray->timeStamp = (double)ts.tv_sec + ((double)ts.tv_nsec * 1.0e-09);
             }
 
-            //ErGetTicks(0, &evr_ticks); setDoubleParam(cameraEllapseTime, double(evr_ticks)/119.0);
-            this->unlock();
-            
             doCallbacksGenericPointer(pArray, NDArrayData, 0);
-
-            this->lock();
             pArray->release();
 
             if (this->framesRemaining > 0) {  // Keep looping
@@ -2007,8 +2005,8 @@ void OrcaUsbDriver::dataTask(void) {
             }
             
             if (this->framesRemaining == 0)  {  // Stop looping
-                setIntegerParam(ADAcquire, 0);
-                acquire = 0;
+                acquire = false;
+                setIntegerParam(ADAcquire, acquire);
             }
 
             getIntegerParam(ADNumImagesCounter, &imageCounter);
@@ -2019,30 +2017,27 @@ void OrcaUsbDriver::dataTask(void) {
             imageCounter++;
             setIntegerParam(NDArrayCounter, imageCounter);
             
-            endPerfMeasure(perf_proc);
-
-            calcPerfMeasure(perf_wait);      setDoubleParam(cameraWaitProcTime, perf_wait->elapsed_time);
-            calcPerfMeasure(perf_start);     setDoubleParam(cameraStartProcTime, perf_start->elapsed_time);
-            calcPerfMeasure(perf_callback);  setDoubleParam(cameraCallbackProcTime, perf_callback->elapsed_time);
-            calcPerfMeasure(perf_proc);      setDoubleParam(cameraImageProcTime, perf_proc->elapsed_time);
 
             callParamCallbacks();
-            this->unlock();
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: Exiting acquire loop...\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str());
         }  // End of acquire loop
 
         dcamcap_stop(hdcam);
+        dcambuf_release(hdcam);
+        dcamwait_close(hwait);
         
         setIntegerParam(ADStatus, ADStatusIdle);
         callParamCallbacks();
-        printf("#%d: End Acquire Loop\n", cameraIndex);
-    } /* end of infinite loop */
+    } // End of infinite loop
 
-    delete[] pData;
-
-    dcambuf_release(hdcam);
-    dcamwait_close(hwait);
-    printf("#%d: Terminate Acquire Thread\n", cameraIndex);
-}
+    exited = true;
+    asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+            "%s::%s: %s: Exiting dataTask...\n",
+            driverName.c_str(), functionName.c_str(), port_name.c_str());
+    this->unlock();
+}  // End dataTask
 
 
 //-------------------------------------------------------------------------
@@ -2059,60 +2054,52 @@ asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value) {
         printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
     }
 
-    if(pasynUser->reason == ADAcquire) 
-    {
+    if (pasynUser->reason == ADAcquire) {
         // acquire on connected cameras only
-        if (cameraAvailable != 0)
-        {
-            if(value && !acquire) 
-            {
-                acquire = 1;
-                setIntegerParam(ADNumImagesCounter, 0);
+        if (cameraAvailable != 0) {
+            if (value && !acquire) {
+                acquire = true;
+                setIntegerParam(ADAcquire, acquire);
+                setIntegerParam(ADStatus, ADStatusAcquire);
                 epicsEventSignal(dataEvent);
             }
 
-            if(!value && acquire) 
-            {
-                acquire = 0;
+            if (!value && acquire) {
+                acquire = false;
+                setIntegerParam(ADAcquire, acquire);
             }
-        }
-        else
-        {
+        } else {
             printf("#%d: Camera is not available\n", cameraIndex);
         }
     }
 
-    //if(pasynUser->reason == ADMinX)  
-    //{ 
-    //    setIntegerParam(ADMinX, value);
-    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHPos", pasynUser->reason, value);
-    //    if(setHPos(value) != -1)
-    //      setIntegerParam(ADMinX, value); 
-    //}
+    if (pasynUser->reason == ADMinX) {
+        setIntegerParam(ADMinX, value);
+        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHPos", pasynUser->reason, value);
+        //if(setHPos(value) != -1)
+        //  setIntegerParam(ADMinX, value); 
+    }
 
-    //if(pasynUser->reason == ADSizeX)  
-    //{ 
-    //    setIntegerParam(ADSizeX, value);
-    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHSize", pasynUser->reason, value);
-    //    if(setHSize(value) != -1)
-    //      setIntegerParam(ADSizeX, value); 
-    //}
+    if (pasynUser->reason == ADSizeX) { 
+        setIntegerParam(ADSizeX, value);
+        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHSize", pasynUser->reason, value);
+        //if(setHSize(value) != -1)
+        //  setIntegerParam(ADSizeX, value); 
+    }
 
-    //if(pasynUser->reason == ADMinY)  
-    //{ 
-    //    setIntegerParam(ADMinY, value);
-    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVPos", pasynUser->reason, value);
-    //    if(setVPos(value) != -1)
-    //      setIntegerParam(ADMinY, value); 
-    //}
+    if (pasynUser->reason == ADMinY) { 
+        setIntegerParam(ADMinY, value);
+        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVPos", pasynUser->reason, value);
+        //if(setVPos(value) != -1)
+        //  setIntegerParam(ADMinY, value); 
+    }
 
-    //if(pasynUser->reason == ADSizeY)  
-    //{ 
-    //    setIntegerParam(ADSizeY, value);
-    //    printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVSize", pasynUser->reason, value);
-    //    if(setVSize(value) != -1)
-    //      setIntegerParam(ADSizeY, value); 
-    //}
+    if (pasynUser->reason == ADSizeY) { 
+        setIntegerParam(ADSizeY, value);
+        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVSize", pasynUser->reason, value);
+        //if(setVSize(value) != -1)
+        //  setIntegerParam(ADSizeY, value); 
+    }
 
     if(pasynUser->reason == ADImageMode)
         setIntegerParam(ADImageMode, value);
@@ -2172,26 +2159,6 @@ asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value) 
 //-------------------------------------------------------------------------
 // End ADDriver function overrides
 //-------------------------------------------------------------------------
-
-
-void OrcaUsbDriver::exitHook(void) {
-/**********************************************************************
-**********************************************************************/
-    printf( "Exit loop of camera %d called\n", cameraIndex );
-
-    if (hdcam != NULL)
-    {
-        dcamdev_close( hdcam );
-        printf( "Camera %d closed on exit\n", cameraIndex );
-    }
-
-    exit_loop = 1;
-    acquire = 0;
-    
-    epicsEventSignal(dataEvent);
-
-    epicsThreadSleep(2.);
-}
 
 
 /**********************************************************************

@@ -18,18 +18,7 @@
 #define OrcaCameraReadStatString            "CAMERA_READ_STAT"
 #define OrcaCameraStatusString              "CAMERA_STATUS"
 
-/* deugging */
-#define OrcaCameraImgProcTimeString         "CAMERA_IMGPROCTIME"
-#define OrcaCameraCBProcTimeString          "CAMERA_CBPROCTIME"
-#define OrcaCameraWaitProcTimeString        "CAMERA_WAITPROCTIME"
-#define OrcaCameraStartProcTimeString       "CAMERA_STARTPROCTIME"
-#define OrcaCameraEllapseTimeString         "CAMERA_ELLAPSETIME"
 
-#define OrcaCameraLostFrameSyncString       "CAMERA_LOSTFRAMESYNC"
-
-
-//static ELLLIST          orcaList;
-//static epicsMutexId     initLock = NULL;
 static int              initCounter = 0;
 static DCAMAPI_INIT     apiinit;
 static int              deviceCount = 0;
@@ -49,12 +38,10 @@ class OrcaUsbDriver : public ADDriver {
         int getCamIndex(void);
 
     protected:
-        //epicsMutexId serialLock;
         epicsEventId dataEvent;
 
-        int firstOrcaParam;
-        #define FIRST_ORCA_PARAM firstOrcaParam
         int cameraName;
+        #define FIRST_ORCA_PARAM cameraName
         int cameraSerial;
         int cameraFirmware;
         int cameraInfo;
@@ -63,31 +50,20 @@ class OrcaUsbDriver : public ADDriver {
         int cameraTrgGlobalExposure;
         int cameraReadStat;
         int cameraStatus;
-
-        int cameraImageProcTime;
-        int cameraCallbackProcTime;
-        int cameraWaitProcTime;
-        int cameraStartProcTime; 
-        int cameraEllapseTime;
-
-        int cameraLostFrameSyncCounter;
-
-        int lastOrcaParam;
-        #define LAST_ORCA_PARAM  lastOrcaParam
+        #define LAST_ORCA_PARAM cameraStatus
         #define NUM_ORCA_DET_PARAMS ((int)(&LAST_ORCA_PARAM - &FIRST_ORCA_PARAM + 1))
 
     private:
         std::string port_name;
-        int acquire;
-        int exit_loop;
+        bool acquire;
+        bool exit_loop, exited;
         int binX, binY, minX, minY, sizeX, sizeY, maxSizeX, maxSizeY;
-
-        int framesRemaining;
+        int minX_prev, minY_prev, sizeX_prev, sizeY_prev;
 
         HDCAM hdcam;
+        int framesRemaining;
         int cameraIndex;
         int cameraAvailable;
-
         int findCameraById(const char* cameraId);
         int findCamera();
         int getCameraName(char *value);
