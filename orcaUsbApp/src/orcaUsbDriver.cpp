@@ -85,7 +85,7 @@ static void exitHookC(void *drvPvt) {
  * \params[in]: pointer to the OrcaUsb object created in OrcaUsbConfig
 **********************************************************************/
     OrcaUsbDriver *pOrca = (OrcaUsbDriver*) drvPvt;
-    printf("#%d: Calling exit hook for OrcaUsb driver...\n", pOrca->getCamIndex());
+    printf("#%d: Exit hook for OrcaUsb driver...\n", pOrca->getCamIndex());
     delete pOrca;
 }
 
@@ -264,10 +264,14 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     setIntegerParam(ADMinY, minY);
     setIntegerParam(ADSizeX, sizeX);
     setIntegerParam(ADSizeY, sizeY);
+    setIntegerParam(NDArraySizeX, sizeX);
+    setIntegerParam(NDArraySizeY, sizeY);
+    setIntegerParam(NDArraySize, sizeX*sizeY*sizeof(epicsUInt16));
+    setIntegerParam(NDDataType, NDUInt16);
+    setIntegerParam(NDArrayCallbacks, 1);
 
-    // subarray setting is supported only in initial phase 
-    // (cannot be set when waiting for image)    
-    setSubarray(minX, sizeX, minY, sizeY);
+    // Set default ROI
+    setROI(minX, sizeX, minY, sizeY);
 
     // register shutdown function for epicsAtExit
     epicsAtExit(exitHookC, this);
@@ -290,12 +294,12 @@ OrcaUsbDriver::~OrcaUsbDriver() {
     this->lock();
     exit_loop = true;
     acquire = false;
+    this->unlock();
     epicsEventSignal(dataEvent);
     if (hdcam != NULL) {
         dcamdev_close(hdcam);
         printf("Camera %d closed on exit\n", cameraIndex);
     }
-    this->unlock();
 
     while (!exited) {
         epicsThreadSleep(0.2);
@@ -1148,10 +1152,10 @@ int OrcaUsbDriver::setBinning(int binning) {
 }
 
 
-int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize) {
+int OrcaUsbDriver::getROI(int *hpos, int *hsize, int *vpos, int *vsize) {
 /**********************************************************************
 **********************************************************************/
-    const std::string functionName = "getSubarray";
+    const std::string functionName = "getROI";
     DCAMERR err;
     double data;
 
@@ -1200,10 +1204,10 @@ int OrcaUsbDriver::getSubarray(int *hpos, int *hsize, int *vpos, int *vsize) {
 }
 
 
-int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize) {
+int OrcaUsbDriver::setROI(int hpos, int hsize, int vpos, int vsize) {
 /**********************************************************************
 **********************************************************************/
-    const std::string functionName = "setSubarray";
+    const std::string functionName = "setROI";
     DCAMERR err;
 
     asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
@@ -1215,42 +1219,42 @@ int OrcaUsbDriver::setSubarray(int hpos, int hsize, int vpos, int vsize) {
     if (failed(err))
     {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, hpos);
     if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, vpos);
     if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
     if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
     if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
     if (failed(err)) {
         printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetSubArray\n");
+        printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
@@ -1408,11 +1412,11 @@ int OrcaUsbDriver::getCamIndex() {
 }
 
 
-asynStatus OrcaUsbDriver::getGeometry() {
+asynStatus OrcaUsbDriver::configureROI() {
 /**********************************************************************
     Get image parameters from base class and validate.
 **********************************************************************/
-    const std::string functionName = "getGeometry";
+    const std::string functionName = "configureROI";
     int status = asynSuccess;
 
     status |= getIntegerParam(ADMaxSizeX, &maxSizeX);
@@ -1452,7 +1456,7 @@ asynStatus OrcaUsbDriver::getGeometry() {
     if (minX+sizeX > maxSizeX) {
         sizeX = maxSizeX - minX;
         status |= setIntegerParam(ADSizeX, sizeX);
-        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
                 "%s::%s: port %s: sizeX changed to %d\n", 
                 driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeX);
     }
@@ -1465,7 +1469,7 @@ asynStatus OrcaUsbDriver::getGeometry() {
     if (minY+sizeY > maxSizeY) {
         sizeY = maxSizeY - minY;
         status |= setIntegerParam(ADSizeY, sizeY);
-        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
                 "%s::%s: port %s: sizeY changed to %d\n", 
                 driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeY);
     }
@@ -1473,6 +1477,10 @@ asynStatus OrcaUsbDriver::getGeometry() {
         sizeY = 1;
         status |= setIntegerParam(ADSizeY, sizeY);
     }
+        
+    status |= setIntegerParam(NDArraySizeX, sizeX);
+    status |= setIntegerParam(NDArraySizeY, sizeY);
+    status |= setIntegerParam(NDArraySize, sizeX*sizeY*sizeof(epicsUInt16));
 
     if (asynStatus(status) != asynSuccess) {
         asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
@@ -1807,7 +1815,6 @@ void OrcaUsbDriver::dataTask(void) {
     NDArray *pArray = NULL;
     int rowbytes;
     int imageCounter;
-    int hp, hs, vp, vs;
 
     asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
             "%s::%s: %s: Started dataTask...\n",
@@ -1840,31 +1847,33 @@ void OrcaUsbDriver::dataTask(void) {
         }
 
         // Get/set image parameters
-        getGeometry();
-        if (setSubarray(minX, sizeX, minY, sizeY) == -1) {
-            // Failed to set subArray
+        int minX_tmp, sizeX_tmp, minY_tmp, sizeY_tmp;
+        getIntegerParam(ADMinX, &minX_tmp);
+        getIntegerParam(ADSizeX, &sizeX_tmp);
+        getIntegerParam(ADMinY, &minY_tmp);
+        getIntegerParam(ADSizeY, &sizeY_tmp);
+        if (setROI(minX_tmp, sizeX_tmp, minY_tmp, sizeY_tmp) == -1) {
+            // Failed to set ROI
             acquire = false;
             setIntegerParam(ADAcquire, acquire);
             setIntegerParam(ADStatus, ADStatusError);
             setStringParam(ADStatusMessage, "Stopped acquisition");
             callParamCallbacks();
             asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
-                    "%s::%s: %s: Stopped acquisition: setSubarray failed\n",
+                    "%s::%s: %s: Stopped acquisition: setROI failed\n",
                     driverName.c_str(), functionName.c_str(), port_name.c_str());
-            break;
+            continue;
         }
-        if (getSubarray(&hp, &hs, &vp, &vs) == 0) {
-            // Got parameters from camera, update AD values
-            setIntegerParam(ADMinX, hp);
-            setIntegerParam(ADSizeX, hs);
-            setIntegerParam(ADMinY, vp);
-            setIntegerParam(ADSizeY, vs);
+        if (getROI(&minX_tmp, &sizeX_tmp, &minY_tmp, &sizeY_tmp) == 0) {
+            // Got parameters from camera, update driver with actual values
+            setIntegerParam(ADMinX, minX_tmp);
+            setIntegerParam(ADSizeX, sizeX_tmp);
+            setIntegerParam(ADMinY, minY_tmp);
+            setIntegerParam(ADSizeY, sizeY_tmp);
+            setIntegerParam(NDArraySizeX, sizeX_tmp);
+            setIntegerParam(NDArraySizeY, sizeY_tmp);
+            setIntegerParam(NDArraySize, sizeX_tmp*sizeY_tmp*sizeof(epicsUInt16));
         }
-        setIntegerParam(NDDataType, NDUInt16);
-        setIntegerParam(NDArrayCallbacks, 1);
-        setIntegerParam(NDArraySizeX, sizeX);
-        setIntegerParam(NDArraySizeY, sizeY);
-        setIntegerParam(NDArraySize, sizeX*sizeY*sizeof(epicsUInt16));
 
         // Reset counters
         setIntegerParam(ADNumImagesCounter, 0);
@@ -1879,7 +1888,6 @@ void OrcaUsbDriver::dataTask(void) {
         err = dcamwait_open(&waitopen);
         if (failed(err)) {
             printCameraError(cameraIndex, hdcam, err, "dcamwait_open()\n");
-            // TODO: clean up on failure
             return;
         }
         HDCAMWAIT hwait = waitopen.hwait;
@@ -1888,6 +1896,7 @@ void OrcaUsbDriver::dataTask(void) {
         err = dcambuf_alloc(hdcam, 10);
         if (failed(err)) {
             printCameraError(cameraIndex, hdcam, err, "dcambuf_alloc()\n");
+            dcamwait_close(hwait);
             return;
         }
 
@@ -1895,6 +1904,8 @@ void OrcaUsbDriver::dataTask(void) {
         err = dcamcap_start(hdcam, DCAMCAP_START_SEQUENCE);
         if (failed(err)) {
             printCameraError(cameraIndex, hdcam, err, "dcamcap_start()\n");
+            dcambuf_release(hdcam);
+            dcamwait_close(hwait);
             return;
         }
 
@@ -1913,18 +1924,17 @@ void OrcaUsbDriver::dataTask(void) {
             err = dcamwait_start(hwait, &waitstart);
             this->lock();
             if (failed(err)) {
-                printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
-                acquire = 0;
-                setIntegerParam(ADAcquire, acquire);
+                //printCameraError(cameraIndex, hdcam, err, "dcamwait_start()\n");
+                //acquire = 0;
+                //setIntegerParam(ADAcquire, acquire);
                 setIntegerParam(ADStatus, ADStatusError);
-                setStringParam(ADStatusMessage, "Stopped acquisition");
+                setStringParam(ADStatusMessage, "Error: dcamwait_start");
                 callParamCallbacks();
-                dcamcap_stop( hdcam );
-                dcambuf_release( hdcam );
-                dcamwait_close( hwait );
-                break;
+                //break;
+                dcamcap_stop(hdcam);
+                continue;
             }
-
+            
             DCAMCAP_TRANSFERINFO captransferinfo;
             memset(&captransferinfo, 0, sizeof(captransferinfo));
             captransferinfo.size = sizeof(captransferinfo);
@@ -1957,14 +1967,13 @@ void OrcaUsbDriver::dataTask(void) {
             getEffectiveSizeX(&esizex);
             getEffectiveSizeY(&esizey);
             asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
-                    "%s::%s: %s: sizeX=%d, sizeY=%d, esizex=%d, esizey=%d, rowbytes=%d\n",
+                    "%s::%s: %s: sizeX_tmp=%d, sizeY_tmp=%d, esizex=%d, esizey=%d, rowbytes=%d\n",
                     driverName.c_str(), functionName.c_str(), port_name.c_str(),
-                    sizeX, sizeY, esizex, esizey, rowbytes);
-
+                    sizeX_tmp, sizeY_tmp, esizex, esizey, rowbytes);
     
             int ndims = 2;
-            dims[0] = sizeX;
-            dims[1] = sizeY;
+            dims[0] = sizeX_tmp;
+            dims[1] = sizeY_tmp;
             pArray = this->pNDArrayPool->alloc(ndims, dims, NDUInt16, 0, NULL);
 
 #if USE_COPYFRAME
@@ -1972,8 +1981,8 @@ void OrcaUsbDriver::dataTask(void) {
             bufframe.rowbytes = rowbytes;
             bufframe.left	  = 0;
             bufframe.top	  = 0;
-            bufframe.width	  = sizeX;
-            bufframe.height	  = sizeY;
+            bufframe.width	  = sizeX_tmp;
+            bufframe.height	  = sizeY_tmp;
 
             err = dcambuf_copyframe(hdcam, &bufframe);
             if (failed(err)) {
@@ -2016,7 +2025,6 @@ void OrcaUsbDriver::dataTask(void) {
             getIntegerParam(NDArrayCounter, &imageCounter);
             imageCounter++;
             setIntegerParam(NDArrayCounter, imageCounter);
-            
 
             callParamCallbacks();
             asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
@@ -2045,115 +2053,127 @@ void OrcaUsbDriver::dataTask(void) {
 //-------------------------------------------------------------------------
 asynStatus OrcaUsbDriver::writeInt32(asynUser *pasynUser, epicsInt32 value) {
 /**********************************************************************
+    * Called when asyn clients call pasynInt32->write().
+    * This function performs actions for some parameters, including ADAcquire, ADBinX, etc.
+    * For all parameters it sets the value in the parameter library and calls any registered callbacks.
+    * \param[in] pasynUser pasynUser structure that encodes the reason and address.
+    * \param[in] value Value to write.
 **********************************************************************/
-    static const char *functionName = "writeInt32";
+    static std::string functionName = "writeInt32";
+    int function = pasynUser->reason;
+    int status = asynSuccess;
 
-    // print out only if not periodic camera status request    
-    if(pasynUser->reason != cameraReadStat)
-    {
-        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, functionName, pasynUser->reason, value);
-    }
+    /* Set the parameter and readback in the parameter library.  This may be overwritten when we read back the
+     * status at the end, but that's OK */
+    status = setIntegerParam(function, value);
 
-    if (pasynUser->reason == ADAcquire) {
+    if (function == ADAcquire) {
         // acquire on connected cameras only
         if (cameraAvailable != 0) {
             if (value && !acquire) {
                 acquire = true;
-                setIntegerParam(ADAcquire, acquire);
-                setIntegerParam(ADStatus, ADStatusAcquire);
+                status |= setIntegerParam(ADAcquire, acquire);
+                status |= setIntegerParam(ADStatus, ADStatusAcquire);
+                setStringParam(ADStatusMessage, "Acquiring");
                 epicsEventSignal(dataEvent);
             }
 
             if (!value && acquire) {
                 acquire = false;
-                setIntegerParam(ADAcquire, acquire);
+                status |= setIntegerParam(ADAcquire, acquire);
             }
         } else {
-            printf("#%d: Camera is not available\n", cameraIndex);
+            asynPrint(pasynUser, ASYN_TRACEIO_DRIVER,
+                    "%s:%s: %s: Camera #%d not available\n", 
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), cameraIndex);
+        }
+    }  else if ((function == ADSizeX) ||
+                (function == ADSizeY) ||
+                (function == ADMinX) ||
+                (function == ADMinY) ||
+                (function == ADBinX) ||
+                (function == ADBinY)) {
+        if (!acquire) {
+            configureROI();
+        }
+    } else if (function == ADTriggerMode) {
+        if (setExposureControl(value) != -1)
+            status |= setIntegerParam(ADTriggerMode, value);
+    } else if (function == cameraTrg) {
+        if (setTriggerControl(value) != -1)
+            status |= setIntegerParam(cameraTrg, value);
+    } else if (function == cameraTrgPolarity) {
+        if (setTriggerPolarity(value) != -1)
+            status |= setIntegerParam(cameraTrgPolarity, value);
+    } else if (function == cameraTrgGlobalExposure) {
+        if (setTriggerGlobalExposure(value) != -1)
+            status |= setIntegerParam(cameraTrgGlobalExposure, value); 
+    } else if (function == cameraReadStat) {
+        // update camera connection status
+        int stat = getCameraStatus();
+        status |= setIntegerParam(cameraStatus, stat);
+    } else {
+        /* If this is not a parameter we have handled call the base class */
+        if (function < FIRST_ORCA_PARAM) {
+            status |= ADDriver::writeInt32(pasynUser, value);
         }
     }
 
-    if (pasynUser->reason == ADMinX) {
-        setIntegerParam(ADMinX, value);
-        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHPos", pasynUser->reason, value);
-        //if(setHPos(value) != -1)
-        //  setIntegerParam(ADMinX, value); 
-    }
-
-    if (pasynUser->reason == ADSizeX) { 
-        setIntegerParam(ADSizeX, value);
-        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setHSize", pasynUser->reason, value);
-        //if(setHSize(value) != -1)
-        //  setIntegerParam(ADSizeX, value); 
-    }
-
-    if (pasynUser->reason == ADMinY) { 
-        setIntegerParam(ADMinY, value);
-        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVPos", pasynUser->reason, value);
-        //if(setVPos(value) != -1)
-        //  setIntegerParam(ADMinY, value); 
-    }
-
-    if (pasynUser->reason == ADSizeY) { 
-        setIntegerParam(ADSizeY, value);
-        printf("#%d: (%s) function: %d, value: %d\n", cameraIndex, "setVSize", pasynUser->reason, value);
-        //if(setVSize(value) != -1)
-        //  setIntegerParam(ADSizeY, value); 
-    }
-
-    if(pasynUser->reason == ADImageMode)
-        setIntegerParam(ADImageMode, value);
-    if(pasynUser->reason == ADNumImages)
-        setIntegerParam(ADNumImages, value);
-    if(pasynUser->reason == NDArrayCounter)
-        setIntegerParam(NDArrayCounter, value);
-
-    if(pasynUser->reason == ADTriggerMode)
-        if(setExposureControl(value) != -1)
-            setIntegerParam(ADTriggerMode, value);
-
-    if(pasynUser->reason == cameraTrg)
-        if(setTriggerControl(value) != -1)
-            setIntegerParam(cameraTrg, value);
-
-    if(pasynUser->reason == cameraTrgPolarity)
-        if(setTriggerPolarity(value) != -1)
-            setIntegerParam(cameraTrgPolarity, value);
-
-    if(pasynUser->reason == cameraTrgGlobalExposure)
-        if(setTriggerGlobalExposure(value) != -1)
-            setIntegerParam(cameraTrgGlobalExposure, value); 
-
-    if(pasynUser->reason == cameraReadStat)
-    {
-        // update camera connection status
-        int stat = getCameraStatus();
-        setIntegerParam(cameraStatus, stat);
+    if (status) {
+        asynPrint(pasynUser, ASYN_TRACE_ERROR, 
+                "%s:%s: %s: Error: status=%d, function=%d, value=%d\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), status, function, value);
+    } else {
+        asynPrint(pasynUser, ASYN_TRACEIO_DRIVER, 
+              "%s:%s: %s: function=%d, value=%d\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), function, value);
     }
 
     callParamCallbacks();
-
-    return asynStatus(0);
+    return (asynStatus)status;
 }
 
 
 asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value) {
 /**********************************************************************
+    * Called when asyn clients call pasynFloat64->write().
+    * This function performs actions for some parameters.
+    * For all parameters it sets the value in the parameter library and calls any registered callbacks.
+    * \param[in] pasynUser pasynUser structure that encodes the reason and address.
+    * \param[in] value Value to write.
 **********************************************************************/
-    //static const char *functionName = "writeFloat64";
-    //printf("#%d: (%s) function: %d, value %lf\n", cameraIndex, functionName, pasynUser->reason, value);
+    static std::string functionName = "writeFloat64";
+    int function = pasynUser->reason;
+    int status = asynSuccess;
 
-    if(pasynUser->reason == ADAcquireTime) 
-    {
+    /* Set the parameter and readback in the parameter library.  This may be overwritten when we read back the
+     * status at the end, but that's OK */
+    status = setDoubleParam(function, value);
+
+    if (function == ADAcquireTime) {
         double tmpfloat64;
         setExposure(value);
-        if(getActualExposure(&tmpfloat64) != -1) 
-            setDoubleParam(ADAcquireTime, tmpfloat64);
+        if (getActualExposure(&tmpfloat64) != -1) 
+            status |= setDoubleParam(ADAcquireTime, tmpfloat64);
+    } else {
+        /* If this is not a parameter we have handled call the base class */
+        if (function < FIRST_ORCA_PARAM) {
+            status |= ADDriver::writeFloat64(pasynUser, value);
+        }
+    }
+
+    if (status) {
+        asynPrint(pasynUser, ASYN_TRACE_ERROR, 
+                "%s:%s: %s: Error: status=%d, function=%d, value=%f\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), status, function, value);
+    } else {
+        asynPrint(pasynUser, ASYN_TRACEIO_DRIVER, 
+              "%s:%s: %s: function=%d, value=%f\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), function, value);
     }
 
     callParamCallbacks();
-
-    return asynStatus(0);
+    return (asynStatus)status;
 }
 
 //-------------------------------------------------------------------------

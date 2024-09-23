@@ -58,7 +58,6 @@ class OrcaUsbDriver : public ADDriver {
         bool acquire;
         bool exit_loop, exited;
         int binX, binY, minX, minY, sizeX, sizeY, maxSizeX, maxSizeY;
-        int minX_prev, minY_prev, sizeX_prev, sizeY_prev;
 
         HDCAM hdcam;
         int framesRemaining;
@@ -94,16 +93,15 @@ class OrcaUsbDriver : public ADDriver {
         int setTriggerDelay(double value);
         int getTriggerGlobalExposure(double *value);
         int setTriggerGlobalExposure(int value);
-        int getSubarray(int *hpos, int *hsize, int *vpos, int *vsize);
-        int setSubarray(int hpos, int hsize, int vpos, int vsize);
+        asynStatus configureROI();
+        int getROI(int *hpos, int *hsize, int *vpos, int *vsize);
+        int setROI(int hpos, int hsize, int vpos, int vsize);
         int setHPos(int hpos);
         int setHSize(int hsize);
         int setVPos(int vpos);
         int setVSize(int vsize);
         void printCameraError(int camIndex, HDCAM hdcam, DCAMERR errid, const char* apiname);
 
-        asynStatus setGeometry();
-        asynStatus getGeometry();
 };
 
 #endif
