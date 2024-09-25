@@ -18,11 +18,10 @@
 #include <epicsThread.h>
 #include <epicsEvent.h>
 #include <epicsString.h>
-#include <iocsh.h>
-#include <epicsExit.h>
-#include <epicsEvent.h>
 #include <epicsExit.h>
 #include <epicsExport.h>
+#include <iocsh.h>
+#include <errlog.h>
 
 #include "orcaUsbDriver.h"
 
@@ -64,9 +63,6 @@ extern "C" {
 // 0: call dcambuf_lockframe to access image, 1: call dcambuf_copyframe to access image
 #define USE_COPYFRAME 1
 
-// 0: don't use serial number to identify camera, 1: use serial number to identify camera
-#define USE_SER_NUM 1
-
 
 static void dataTaskC(void *drvPvt) {
 /**********************************************************************
@@ -85,7 +81,7 @@ static void exitHookC(void *drvPvt) {
  * \params[in]: pointer to the OrcaUsb object created in OrcaUsbConfig
 **********************************************************************/
     OrcaUsbDriver *pOrca = (OrcaUsbDriver*) drvPvt;
-    printf("#%d: Exit hook for OrcaUsb driver...\n", pOrca->getCamIndex());
+    epicsPrintf("Orca camera %d driver exiting...\n", pOrca->getCamIndex());
     delete pOrca;
 }
 
@@ -97,7 +93,7 @@ static void exitHookC(void *drvPvt) {
   * After calling the base class constructor this method creates a thread to collect the detector data, 
   * and sets reasonable default values for the parameters defined in this class, asynNDArrayDriver and ADDriver.
   * \param[in]: The name of the asyn port driver to be created.
-  * \param[in]: The ID (serial number) of the camera.
+  * \param[in]: The ID (serial number) of the camera or "0" for the next available camera.
   * \param[in]: The maximum number of NDArray buffers that the NDArrayPool for this driver is 
   *             allowed to allocate. Set this to -1 to allow an unlimited number of buffers.
   * \param[in]: The maximum amount of memory that the NDArrayPool for this driver is 
@@ -132,7 +128,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         err = dcamapi_init(&apiinit);
 
         if (failed(err)) {
-            printf("Error: initializing API\n");
+            errlogPrintf("Error: initializing API\n");
             return;
         }
 
@@ -141,7 +137,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
         }
 
         deviceCount = apiinit.iDeviceCount;
-        printf("Found %d device(s).\n", deviceCount);
+        //epicsPrintf("Found %d device(s).\n", deviceCount);
     }
 
 
@@ -154,13 +150,7 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     // (i.e. number of attempts to connect new cameras from EPICS)
     initCounter++;
 
-#if USE_SER_NUM
-    // enumarate cameras and find the one by cameraId    
-    cameraAvailable = findCameraById(cameraId);
-#else
-    // find next available camera    
-    cameraAvailable = findCamera();
-#endif
+    cameraAvailable = findCamera(cameraId);
 
     // set hdcam to -1 as NULL (0) is accepted by dcamdev_getstring()
     // dcamdev_getstring() can be called with the device index too
@@ -168,7 +158,6 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     if (cameraAvailable == 0)
         hdcam = (HDCAM) -1;
 
-    //serialLock = epicsMutexMustCreate();
     dataEvent = epicsEventMustCreate(epicsEventEmpty);
 
     // Asyn parameter library
@@ -187,31 +176,25 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     setStringParam(ADManufacturer, "Hamamatsu");
 
-    if(getCameraName(str_message) != -1)    
-    {
-        // set "CAMREA_NAME" PV thru the cameraName PV parameter
+    if (getCameraName(str_message) != -1) {
         setStringParam(cameraName, str_message);  
-        
-        // set base class parameter default value        
         setStringParam(ADModel, str_message); 
-    }
-    else
-    {
+    } else {
         setStringParam(cameraName, "");  
         setStringParam(ADModel, ""); 
     }
 
-    if(getCameraSerial(str_message) != -1) 
+    if (getCameraSerial(str_message) != -1) 
         setStringParam(cameraSerial, str_message);
     else
         setStringParam(cameraSerial, "");
 
-    if(getCameraFirmware(str_message) != -1) 
+    if (getCameraFirmware(str_message) != -1) 
         setStringParam(cameraFirmware, str_message);
     else
         setStringParam(cameraFirmware, "");
 
-    if(getCameraInfo(str_message) != -1)
+    if (getCameraInfo(str_message) != -1)
         setStringParam(cameraInfo, str_message);
     else
         setStringParam(cameraInfo, "");
@@ -221,33 +204,27 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
 
     //setIntegerParam(cameraTrgGlobalExposure, 5); /* Global Reset */
 
-    if(getActualExposure(&tmpfloat64) != -1)
+    if (getActualExposure(&tmpfloat64) != -1)
         setDoubleParam(ADAcquireTime, tmpfloat64);
     else
         setDoubleParam(ADAcquireTime, 0);
 
-    // get sensor size X from Hamamtsu driver
-    if(getEffectiveSizeX(&tmpint32) != -1)
-    {
+    // get sensor size X
+    if (getEffectiveSizeX(&tmpint32) != -1) {
         // set base class parameter default value        
         maxSizeX = tmpint32;
         setIntegerParam(ADMaxSizeX, maxSizeX);
-    }
-    else
-    {
+    } else {
         setIntegerParam(ADMaxSizeX, SIZE_X);
         maxSizeX = SIZE_X;
     }
 
-    // get sensor size Y from Hamamtsu driver
-    if(getEffectiveSizeY(&tmpint32) != -1)
-    {
+    // get sensor size Y
+    if (getEffectiveSizeY(&tmpint32) != -1) {
         // set base class parameter default value        
         maxSizeY = tmpint32;
         setIntegerParam(ADMaxSizeY, maxSizeY);
-    }
-    else
-    {
+    } else {
         setIntegerParam(ADMaxSizeY, SIZE_Y);
         maxSizeY = SIZE_Y;
     }
@@ -270,6 +247,9 @@ OrcaUsbDriver::OrcaUsbDriver(const char *portName, const char* cameraId, int max
     setIntegerParam(NDDataType, NDUInt16);
     setIntegerParam(NDArrayCallbacks, 1);
 
+    //set global exposure to GLOBAL RESET (default is DELAYED)
+    setTriggerGlobalExposure(DCAMPROP_TRIGGER_GLOBALEXPOSURE__GLOBALRESET);
+
     // Set default ROI
     setROI(minX, sizeX, minY, sizeY);
 
@@ -289,8 +269,7 @@ OrcaUsbDriver::~OrcaUsbDriver() {
 /**********************************************************************
     OrcaUsb Destructor. Called by the exitHookC function when IOC is shut down.
 **********************************************************************/
-    printf("~OrcaUsbDriver...\n");
-
+    std::string functionName = "~OrcaUsbDriver";
     this->lock();
     exit_loop = true;
     acquire = false;
@@ -298,7 +277,10 @@ OrcaUsbDriver::~OrcaUsbDriver() {
     epicsEventSignal(dataEvent);
     if (hdcam != NULL) {
         dcamdev_close(hdcam);
-        printf("Camera %d closed on exit\n", cameraIndex);
+        //epicsPrintf("Camera %d closed on exit\n", cameraIndex);
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: port %s: Camera %d closed\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), cameraIndex);
     }
 
     while (!exited) {
@@ -310,11 +292,11 @@ OrcaUsbDriver::~OrcaUsbDriver() {
 int OrcaUsbDriver::getCameraName(char *value) {
 /**********************************************************************
 **********************************************************************/
-    int  ret = 0;
+    std::string functionName = "getCameraName";
     DCAMERR err;
     char data[256];
 
-    if(!value)
+    if (!value)
         return -1;
 
     DCAMDEV_STRING param;
@@ -324,31 +306,31 @@ int OrcaUsbDriver::getCameraName(char *value) {
     param.textbytes = sizeof(data);
     param.iString = DCAM_IDSTR_MODEL;
 
-    err = dcamdev_getstring( hdcam, &param );
+    err = dcamdev_getstring(hdcam, &param);
  
-    if( !failed(err) )
-    {
+    if (!failed(err)) {
         strcpy(value, data);
-    }
-    else
-    {
-        //printf( "Error: get DCAM_IDSTR_MODEL\n" );
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: %s: Camera name: %s\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDSTR_MODEL)\n");
-        ret = -1;
+        return -1;
     }
 
-    return ret;
+    return 0;
 }
 
 
 int OrcaUsbDriver::getCameraSerial(char *value){
 /**********************************************************************
 **********************************************************************/
+    std::string functionName = "getCameraSerial";
     int  ret = 0;
     DCAMERR err;
     char data[256];
 
-    if(!value)
+    if (!value)
         return -1;
 
     DCAMDEV_STRING param;
@@ -358,14 +340,13 @@ int OrcaUsbDriver::getCameraSerial(char *value){
     param.textbytes = sizeof(data);
     param.iString = DCAM_IDSTR_CAMERAID;
 
-    err = dcamdev_getstring( hdcam, &param );
-    if( !failed(err) )
-    {
+    err = dcamdev_getstring(hdcam, &param);
+    if (!failed(err)) {
         strcpy(value, data);
-    }
-    else
-    {
-        //printf( "Error: get DCAM_IDSTR_CAMERAID\n" );
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: port %s: Camera serial: %s\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDSTR_CAMERAID)\n");
         ret = -1;
     }
@@ -377,11 +358,11 @@ int OrcaUsbDriver::getCameraSerial(char *value){
 int OrcaUsbDriver:: getCameraFirmware(char *value) {
 /**********************************************************************
 **********************************************************************/
-    int  ret = 0;
+    std::string functionName = "getCameraFirmware";
     DCAMERR err;
     char data[256];
 
-    if(!value)
+    if (!value)
         return -1;
 
     DCAMDEV_STRING param;
@@ -391,30 +372,29 @@ int OrcaUsbDriver:: getCameraFirmware(char *value) {
     param.textbytes = sizeof(data);
     param.iString = DCAM_IDSTR_CAMERAVERSION;
 
-    err = dcamdev_getstring( hdcam, &param );
-    if( !failed(err) )
-    {
+    err = dcamdev_getstring(hdcam, &param);
+    if (!failed(err)) {
         strcpy(value, data);
-    }
-    else
-    {
-        //printf( "Error: get DCAM_IDSTR_CAMERAVERSION\n" );
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: port %s: Camera firmware: %s\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDSTR_CAMERAVERSION)\n");
-        ret = -1;
+        return -1;
     }
 
-    return ret;
+    return 0;
 }
 
 
 int OrcaUsbDriver::getCameraInfo(char *value) {
 /**********************************************************************
 **********************************************************************/
-    int  ret = 0;
+    std::string functionName = "getCameraInfo";
     DCAMERR err;
     char data[256];
 
-    if(!value)
+    if (!value)
         return -1;
 
     DCAMDEV_STRING param;
@@ -424,19 +404,18 @@ int OrcaUsbDriver::getCameraInfo(char *value) {
     param.textbytes = sizeof(data);
     param.iString = DCAM_IDSTR_CAMERA_SERIESNAME;
 
-    err = dcamdev_getstring( hdcam, &param );
-    if( !failed(err) )
-    {
+    err = dcamdev_getstring(hdcam, &param);
+    if (!failed(err)) {
         strcpy(value, data);
-    }
-    else
-    {
-        //printf( "Error: get DCAM_IDSTR_CAMERA_SERIESNAME\n" );
+        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                "%s::%s: port %s: Camera series: %s\n",
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDSTR_SERIESNAME)\n");
-        ret = -1;
+        return -1;
     }
 
-    return ret;
+    return 0;
 }
 
 
@@ -460,7 +439,6 @@ int OrcaUsbDriver::getCameraStatus() {
     dcamprop_getvalue(hdcam, DCAM_IDPROP_SENSORTEMPERATURE, &temp);
     err = dcamprop_getvalue(hdcam, DCAM_IDPROP_SYSTEM_ALIVE, &alive);
 
-    //printf("getCameraStatus: alive=%f, err=0x%x\n", alive, err);
     asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
             "%s::%s: port %s: alive=%f, temp=%f, err=0x%x\n", 
             driverName.c_str(), functionName.c_str(), port_name.c_str(), alive, temp, err);
@@ -487,7 +465,6 @@ int OrcaUsbDriver::getActualExposure(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_EXPOSURETIME\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_EXPOSURETIME)\n");
         ret = -1;
     }
@@ -513,7 +490,6 @@ int OrcaUsbDriver::getEffectiveSizeX(int *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_IMAGE_WIDTH\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_IMAGE_WIDTH)\n");
         ret = -1;
     }
@@ -536,7 +512,6 @@ int OrcaUsbDriver::getRowBytes(int *value) {
     if (!failed(err)) {
         *value = data;
     } else {
-        //printf( "Error: get DCAM_IDPROP_IMAGE_ROWBYTES\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_IMAGE_ROWBYTES)\n");
         return -1;
     }
@@ -562,7 +537,6 @@ int OrcaUsbDriver::getEffectiveSizeY(int *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_IMAGE_HEIGHT\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_IMAGE_HEIGHT)\n");
         ret = -1;
     }
@@ -588,7 +562,6 @@ int OrcaUsbDriver::getPixelType(int *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_IMAGE_PIXELTYPE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_IMAGE_PIXELTYPE\n");
         ret = -1;
     }
@@ -607,13 +580,11 @@ int OrcaUsbDriver::setExposure(double value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_EXPOSURETIME, value );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_EXPOSURETIME\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_EXPOSURETIME)\n");
         ret = -1;
     }
     else
     {
-        //printf( "#%d: DCAM_IDPROP_EXPOSURETIME set to %f\n", cameraIndex, value);
     }
 
     return ret;
@@ -643,13 +614,11 @@ int OrcaUsbDriver::setExposureControl(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_TRIGGERSOURCE, prop );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_TRIGGERSOURCE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_TRIGGERSOURCE)\n");
         ret = -1;
     }
     else
     {
-        //printf( "#%d: DCAM_IDPROP_TRIGGERSOURCE set to %d\n", cameraIndex, prop);
     }
 
     return ret;
@@ -679,13 +648,11 @@ int OrcaUsbDriver::setTriggerControl(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_TRIGGERACTIVE, prop );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_TRIGGERACTIVE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_TRIGGERACTIVE)\n");
         ret = -1;
     }
     else
     {
-        //printf( "#%d: DCAM_IDPROP_TRIGGERACTIVE set to %d\n", cameraIndex, prop);
     }
 
     return ret;
@@ -715,13 +682,11 @@ int OrcaUsbDriver::setTriggerPolarity(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_TRIGGERPOLARITY, prop );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_TRIGGERPOLARITY\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_TRIGGERPOLARITY)\n");
         ret = -1;
     }
     else
     {
-        //printf( "#%d: DCAM_IDPROP_TRIGGERPOLARITY set to %d\n", cameraIndex, prop);
     }
 
     return ret;
@@ -748,17 +713,13 @@ int OrcaUsbDriver::getSensorMode(double *value) {
     DCAMERR err;
     double data;
 
-    if(!value)
+    if (!value)
         return -1;
 
     err = dcamprop_getvalue( hdcam, DCAM_IDPROP_SENSORMODE, &data );
-    if( !failed(err) )
-    {
+    if (!failed(err)) {
         *value = data;
-    }
-    else
-    {
-        //printf( "Error: get DCAM_IDPROP_SENSORMODE\n" );
+    } else {
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SENSORMODE)\n");
         ret = -1;
     }
@@ -780,7 +741,6 @@ int OrcaUsbDriver::setSensorMode(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_SENSORMODE, value );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_SENSORMODE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_SENSORMODE)\n");
         ret = -1;
     }
@@ -809,7 +769,6 @@ int OrcaUsbDriver::getShutterMode(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_SHUTTER_MODE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_SHUTTER_MODE)\n");
         ret = -1;
     }
@@ -821,6 +780,7 @@ int OrcaUsbDriver::getShutterMode(double *value) {
 int OrcaUsbDriver::setShutterMode(int value) {
 /**********************************************************************
 **********************************************************************/
+    std::string functionName = "setShutterMode";
     int ret = 0;
     DCAMERR err;
     int prop;
@@ -834,7 +794,9 @@ int OrcaUsbDriver::setShutterMode(int value) {
             prop = DCAMPROP_SHUTTER_MODE__ROLLING;
             break;
         default:
-            printf( "#%d: Error: invalid value for DCAM_IDPROP_SHUTTER_MODE\n", cameraIndex );
+            asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                    "%s::%s: port %s: Error: invalid shutter mode %d\n", 
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
             return -1;
     }
 
@@ -842,7 +804,6 @@ int OrcaUsbDriver::setShutterMode(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_SHUTTER_MODE, prop );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_SHUTTER_MODE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_SHUTTER_MODE)\n");
         ret = -1;
     }
@@ -871,7 +832,6 @@ int OrcaUsbDriver::getReadoutTime(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TIMING_READOUTTIME\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TIMING_READOUTTIME)\n");
         ret = -1;
     }
@@ -911,7 +871,6 @@ int OrcaUsbDriver::getTimingExposure(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TIMING_EXPOSURE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TIMING_EXPOSURE)\n");
         ret = -1;
     }
@@ -943,7 +902,6 @@ int OrcaUsbDriver::getGlobalExposureDelay(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TIMING_GLOBALEXPOSUREDELAY\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TIMING_GLOBALEXPOSUREDELAY)\n");
         ret = -1;
     }
@@ -975,7 +933,6 @@ int OrcaUsbDriver::getInvalidExposurePeriod(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TIMING_INVALIDEXPOSUREPERIOD\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TIMING_INVALIDEXPOSUREPERIOD)\n");
         ret = -1;
     }
@@ -1004,7 +961,6 @@ int OrcaUsbDriver::getTriggerDelay(double *value) {
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TRIGGERDELAY\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TRIGGERDELAY)\n");
         ret = -1;
     }
@@ -1023,7 +979,6 @@ int OrcaUsbDriver::setTriggerDelay(double value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_TRIGGERDELAY, value );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_TRIGGERDELAY\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_TRIGGERDELAY)\n");
         ret = -1;
     }
@@ -1065,11 +1020,9 @@ int OrcaUsbDriver::getTriggerGlobalExposure(double *value) {
     if( !failed(err) )
     {
         *value = data;
-        //printf( "#%d: RBV of DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE: %d\n", cameraIndex, (int)data);
     }
     else
     {
-        //printf( "Error: get DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE\n" );
         printCameraError(cameraIndex, hdcam, err, "dcamprop_getvalue(DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE)\n");
         ret = -1;
     }
@@ -1081,6 +1034,7 @@ int OrcaUsbDriver::getTriggerGlobalExposure(double *value) {
 int OrcaUsbDriver::setTriggerGlobalExposure(int value) {
 /**********************************************************************
 **********************************************************************/
+    std::string functionName = "setTriggerGlobalExposure";
     int ret = 0;
     DCAMERR err;
     int prop;
@@ -1103,7 +1057,9 @@ int OrcaUsbDriver::setTriggerGlobalExposure(int value) {
             prop = DCAMPROP_TRIGGER_GLOBALEXPOSURE__GLOBALRESET;
             break;
         default:
-            printf( "#%d: Error: invalid value for DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE: %d\n", cameraIndex, value );
+            asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                    "%s::%s: port %s: Error: invalid exposure mode %d\n", 
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), value);
             return -1;
     }
 
@@ -1111,13 +1067,11 @@ int OrcaUsbDriver::setTriggerGlobalExposure(int value) {
     err = dcamprop_setvalue( hdcam, DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE, prop );
     if( failed(err) )
     {
-        //printf( "Error: set DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE with value: %d\n", value);
         printCameraError(cameraIndex, hdcam, err, "dcamprop_setvalue(DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE)\n");
         ret = -1;
     }
     else
     {
-        //printf( "#%d: DCAM_IDPROP_TRIGGER_GLOBALEXPOSURE set to %d\n", cameraIndex, value );
     }
 
     return ret;
@@ -1134,7 +1088,6 @@ int OrcaUsbDriver::setBinning(int binning) {
 
     if(failed(err))
     {
-        printf("#%d: Error: dcamprop_queryvalue() IDPROP:BINNING, VALUE:%d\n", cameraIndex, binning);
         printCameraError(cameraIndex, hdcam, err, "dcamprop_queryvalue()\n");
         return -1;
     }
@@ -1143,7 +1096,6 @@ int OrcaUsbDriver::setBinning(int binning) {
 
     if(failed(err))
     {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:BINNING, VALUE:%d\n", cameraIndex, binning);
         printCameraError(cameraIndex, hdcam, err, "dcamprop_value()\n");
         return -1;
     }
@@ -1218,186 +1170,37 @@ int OrcaUsbDriver::setROI(int hpos, int hsize, int vpos, int vsize) {
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
     if (failed(err))
     {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, hpos);
     if (failed(err)) {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, vpos);
     if (failed(err)) {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
     if (failed(err)) {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
     if (failed(err)) {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
         return -1;
     }
 
     err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
     if (failed(err)) {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
         printCameraError(cameraIndex, hdcam, err, "setROI\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-
-int OrcaUsbDriver::setHPos(int hpos) {
-/**********************************************************************
-**********************************************************************/
-    DCAMERR err;
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHPOS, hpos);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHPOS, VALUE:%d\n", cameraIndex, hpos);
-        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetHPos\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-
-int OrcaUsbDriver::setHSize(int hsize) {
-/**********************************************************************
-**********************************************************************/
-    DCAMERR err;
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYHSIZE, hsize);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYHSIZE, VALUE:%d\n", cameraIndex, hsize);
-        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetHSize\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-
-int OrcaUsbDriver::setVPos(int vpos) {
-/**********************************************************************
-**********************************************************************/
-    DCAMERR err;
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVPOS, vpos);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVPOS, VALUE:%d\n", cameraIndex, vpos);
-        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetVPos\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-
-int OrcaUsbDriver::setVSize(int vsize) {
-/**********************************************************************
-**********************************************************************/
-    DCAMERR err;
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__OFF);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:OFF\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYVSIZE, vsize);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYVSIZE, VALUE:%d\n", cameraIndex, vsize);
-        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
-        return -1;
-    }
-
-    err = dcamprop_setvalue(hdcam, DCAM_IDPROP_SUBARRAYMODE, DCAMPROP_MODE__ON);
-
-    if(failed(err))
-    {
-        printf("#%d: Error: dcamprop_setvalue() IDPROP:SUBARRAYMODE, VALUE:ON\n", cameraIndex);
-        printCameraError(cameraIndex, hdcam, err, "SetVSize\n");
         return -1;
     }
 
@@ -1501,307 +1304,119 @@ asynStatus OrcaUsbDriver::configureROI() {
 void OrcaUsbDriver::printCameraError(int camIndex, HDCAM hdcam, DCAMERR errid, const char* apiname) {
 /**********************************************************************
 **********************************************************************/
+    std::string functionName = "printCameraError";
         char errtext[ 256 ];
         DCAMERR err;
         DCAMDEV_STRING  param;
 
-        memset( &param, 0, sizeof(param) );
+        memset(&param, 0, sizeof(param));
         param.size      = sizeof(param);
         param.text      = errtext;
         param.textbytes = sizeof(errtext);
         param.iString   = errid;
 
-        err = dcamdev_getstring( hdcam, &param );
+        err = dcamdev_getstring(hdcam, &param);
 
-        if( !failed(err) )
-        {
-            printf( "FAILED(#%d): 0x%08X: %s @ %s\n", camIndex, errid, errtext, apiname );
-        }
-        else
-        {
-            printf( "#%d: Error: getting error string for %s error\n", camIndex, apiname );
+        if (!failed(err)) {
+            asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                    "%s::%s: port %s: FAILED(#%d): 0x%08X: %s @ %s\n", 
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(),
+                    camIndex, errid, errtext, apiname);
+        } else {
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: port %s: Error on cam %d getting error string for %s error\n", 
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(),
+                    camIndex, apiname);
         }
 }
 
 
-int OrcaUsbDriver::findCameraById(const char* cameraId) {
+int OrcaUsbDriver::findCamera(const char* cameraId) {
 /**********************************************************************
 **********************************************************************/
-    int i;
+    std::string functionName = "findCamera";
     DCAMERR err;
-    double value;
-    int cameraFound = 0;
+    bool cameraFound = false;
+    char serial[64];
 
-    for(i=0; i<deviceCount; i++)
-    {
-        // open and check unused camreas only
-        if (openCameras[i] == 0)
-        {
+    for (int i=0; i<deviceCount; i++) {
+        // open and check unused cameras only
+        if (openCameras[i] == 0) {
             // open device
             DCAMDEV_OPEN devopen;
             memset( &devopen, 0, sizeof(devopen) );
             devopen.size = sizeof(devopen);
             devopen.index = i;
 
-            printf( "Dev idx #%d: Trying to open camera\n", i );
-            err = dcamdev_open( &devopen );
-            if( failed(err) )
-            {
-                printf( "Dev idx #%d: Error: opening camera\n", i );
-                return 0;
-            }
-            else
-            {
-                printf( "Dev idx #%d: Opened for ID check\n", i );
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: Trying to open camera... %d\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
+            err = dcamdev_open(&devopen);
+            if (failed(err)) {
+                asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                        "%s::%s: %s: Error opening camera %d\n",
+                        driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
+                continue;
+            } 
 
-                hdcam = devopen.hdcam;
-                char data[256];
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: Opened camera %d for ID check...\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
 
-                DCAMDEV_STRING    param;
-                memset( &param, 0, sizeof(param) );
-                param.size = sizeof(param);
-                param.text = data;
-                param.textbytes = sizeof(data);
+            hdcam = devopen.hdcam;
 
-                param.iString = DCAM_IDSTR_MODEL;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: Model: %s\n", i, data);
-                }
-                else
-                {
-                    printf( "Dev idx #%d: Error: getting model\n", i );
-                }
-
-                param.iString = DCAM_IDSTR_BUS;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: Bus: %s\n", i, data);
-                }
-                else
-                {
-                    printf( "Dev idx #%d: Error: getting bus\n", i );
-                }
-
-                param.iString = DCAM_IDSTR_CAMERAID;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: ID: %s\n", i, data);
-                    // check camera serial number
-                    if( strstr(data, cameraId) )
-                    {
-                        // camera with specified serial number found
-                        cameraFound = 1;
-                        openCameras[i] = 1;
-
-                        printf( "Dev idx #%d: Camera with ID: %s found\n", i, cameraId );
-
-                        if (getSensorMode(&value) != -1)
-                            printf( "Sensor Mode: %d\n", (int)value);
-
-                        // shutter mode property doesn't exists
-                        //if (getShutterMode(&value) != -1)
-                        //    printf( "Shutter Mode: %f\n", value);
-                        //setShutterMode(DCAMPROP_SHUTTER_MODE__GLOBAL);
-
-                        //set global exposure to GLOBAL RESET (default is DELAYED)
-                        setTriggerGlobalExposure(DCAMPROP_TRIGGER_GLOBALEXPOSURE__GLOBALRESET);
-
-                        if (getTriggerGlobalExposure(&value) != -1)
-                            printf( "Trigger Global Exposure: %d\n", (int)value);
-
-                        if (getTimingExposure(&value) != -1)
-                            printf( "Timing Exposure: %d\n", (int)value);
-
-                        if (getGlobalExposureDelay(&value) != -1)
-                            printf( "Exposure Delay (ms): %f\n", 1000*value);
-
-                        //if (getInvalidExposurePeriod(&value) != -1)
-                        //    printf( "Invalid Exposure Period (ms): %f\n", 1000*value);
-
-                        if (getTriggerDelay(&value) != -1)
-                            printf( "Trigger Delay (ms): %f\n", 1000*value);
-
-                        //setTriggerDelay(0.02);
-                        //if (getTriggerDelay(&value) != -1)
-                        //    printf( "Trigger Delay after (ms): %f\n", 1000*value);
-
-                        if (getReadoutTime(&value) != -1)
-                            printf( "Readout Time (ms): %f\n", 1000*value);
-
-                        break;
-                    }
-                    else
-                    {
-                        // close camera with unmatching serial number 
-                        dcamdev_close( hdcam );
-                        hdcam = NULL;
-                        printf( "Dev idx #%d: Unmatching camera closed\n", i );
-                    }
-                }
-                else
-                {
-                    printf( "Dev idx #%d: Error: getting ID\n", i );
-
-                    // close camera if serial number could not be retreived
-                    dcamdev_close( hdcam );
-                    hdcam = NULL;
-                    printf( "Dev idx #%d: Unidentified camera closed\n", i );
-                }
-            }
-        }
-        else
-        {
-            printf( "Dev idx #%d: Camera already in use\n", i );
-        }
-    }
-
-    if (!cameraFound)
-    {
-        printf( "Error: no unopen camera with ID: %s found\n", cameraId );
-        if (hdcam != NULL)
-        {
-            dcamdev_close( hdcam );
-            hdcam = NULL;
-        }
-
-        return 0;
-    }
-    else
-    {
-        return 1;
-    }
-}
-
-
-int OrcaUsbDriver::findCamera() {
-/**********************************************************************
-**********************************************************************/
-    int i;
-    DCAMERR err;
-    double value;
-    int cameraFound = 0;
-
-    //enumerate cameras by device count
-    for(i=0; i<deviceCount; i++)
-    {
-        // open and check unused camreas only
-        if (openCameras[i] == 0)
-        {
-            // open device
-            DCAMDEV_OPEN devopen;
-            memset( &devopen, 0, sizeof(devopen) );
-            devopen.size = sizeof(devopen);
-            devopen.index = i;
-
-            printf( "Dev idx #%d: Trying to open camera\n", i );
-            err = dcamdev_open( &devopen );
-            if( failed(err) )
-            {
-                printf( "Dev idx #%d: Error: opening camera\n", i );
-                return 0;
-            }
-            else
-            {
-                hdcam = devopen.hdcam;
-                char data[256];
-
-                DCAMDEV_STRING    param;
-                memset( &param, 0, sizeof(param) );
-                param.size = sizeof(param);
-                param.text = data;
-                param.textbytes = sizeof(data);
-
-                param.iString = DCAM_IDSTR_MODEL;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: Model: %s\n", i, data);
-                }
-                else
-                {
-                    printf( "Dev idx #%d: Error: getting model\n", i );
-                }
-
-                param.iString = DCAM_IDSTR_BUS;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: Bus: %s\n", i, data);
-                }
-                else
-                {
-                    printf( "Dev idx #%d: Error: getting bus\n", i );
-                }
-
-                param.iString = DCAM_IDSTR_CAMERAID;
-                err = dcamdev_getstring( hdcam, &param );
-                if( !failed(err) )
-                {
-                    printf( "Dev idx #%d: ID: %s\n", i, data);
-
-                    // register camera
-                    cameraFound = 1;
+            if (getCameraSerial(serial) != -1) {
+                if ((strcmp(cameraId, "0") == 0) && (strcmp(serial, "0") != 0)) {
+                    // Don't match camera by serial number; use next available camera
+                    cameraFound = true;
                     openCameras[i] = 1;
-
-                    if (getSensorMode(&value) != -1)
-                        printf( "Sensor Mode: %d\n", (int)value);
-
-                    //set global exposure to GLOBAL RESET (default is DELAYED)
-                    setTriggerGlobalExposure(DCAMPROP_TRIGGER_GLOBALEXPOSURE__GLOBALRESET);
-
-                    if (getTriggerGlobalExposure(&value) != -1)
-                        printf( "Trigger Global Exposure: %d\n", (int)value);
-
-                    if (getTimingExposure(&value) != -1)
-                        printf( "Timing Exposure: %d\n", (int)value);
-
-                    if (getGlobalExposureDelay(&value) != -1)
-                        printf( "Exposure Delay (ms): %f\n", 1000*value);
-
-                    if (getTriggerDelay(&value) != -1)
-                        printf( "Trigger Delay (ms): %f\n", 1000*value);
-
-                    if (getReadoutTime(&value) != -1)
-                        printf( "Readout Time (ms): %f\n", 1000*value);
-
+                    epicsPrintf("Camera %d with %s found\n", i, serial);
                     break;
+                } else {
+                    // Match camera by serial number
+                    if (strstr(serial, cameraId)) {
+                        // camera with specified serial number found
+                        cameraFound = true;
+                        openCameras[i] = 1;
+                        epicsPrintf("Camera %d with ID %s found\n", i, cameraId);
+                        break;
+                    } else {
+                        // close camera with unmatching serial number 
+                        dcamdev_close(hdcam);
+                        hdcam = NULL;
+                        asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                                "%s::%s: %s: Unmatching camera %d closed\n",
+                                driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
+                    }
                 }
-                else
-                {
-                    printf( "#%d: Error: getting ID\n", i );
-
-                    // close camera if serial number could not be retreived
-                    dcamdev_close( hdcam );
-                    hdcam = NULL;
-                    printf( "Dev idx #%d: Unidentified camera closed\n", i );
-                }
+            } else {
+                // close camera if serial number could not be retreived
+                asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                        "%s::%s: %s: Could not get id for camera %d\n",
+                        driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
+                dcamdev_close(hdcam);
+                hdcam = NULL;
             }
+        } else {
+            asynPrint(pasynUserSelf, ASYN_TRACE_FLOW,
+                    "%s::%s: %s: Camera %d already in use\n",
+                    driverName.c_str(), functionName.c_str(), port_name.c_str(), i);
         }
-        else
-        {
-            printf( "Dev idx #%d: Camera already in use\n", i );
-        }
-    }
 
-    if (!cameraFound)
-    {
-        printf( "Error: no unopen camera found\n" );
-        if (hdcam != NULL)
-        {
-            dcamdev_close( hdcam );
+    }  // End for loop
+
+    if (!cameraFound) {
+        asynPrint(pasynUserSelf, ASYN_TRACE_ERROR,
+                "%s::%s: port %s: Error: no unopen camera with ID %s found\n", 
+                driverName.c_str(), functionName.c_str(), port_name.c_str(), cameraId);
+        if (hdcam != NULL) {
+            dcamdev_close(hdcam);
             hdcam = NULL;
         }
-
         return 0;
     }
-    else
-    {
-        return 1;
-    }
+
+    return 1;
 }
 
 

@@ -63,8 +63,7 @@ class OrcaUsbDriver : public ADDriver {
         int framesRemaining;
         int cameraIndex;
         int cameraAvailable;
-        int findCameraById(const char* cameraId);
-        int findCamera();
+        int findCamera(const char* cameraId);
         int getCameraName(char *value);
         int getCameraSerial(char *value);
         int getCameraFirmware(char *value);
@@ -74,7 +73,6 @@ class OrcaUsbDriver : public ADDriver {
         int getEffectiveSizeX(int *value);
         int getEffectiveSizeY(int *value);
         int getRowBytes(int *value);
-        //int getBinning(int *value);
         int setBinning(int binning);
         int getPixelType(int *value);
         int setExposure(double value);
@@ -96,10 +94,6 @@ class OrcaUsbDriver : public ADDriver {
         asynStatus configureROI();
         int getROI(int *hpos, int *hsize, int *vpos, int *vsize);
         int setROI(int hpos, int hsize, int vpos, int vsize);
-        int setHPos(int hpos);
-        int setHSize(int hsize);
-        int setVPos(int vpos);
-        int setVSize(int vsize);
         void printCameraError(int camIndex, HDCAM hdcam, DCAMERR errid, const char* apiname);
 
 };
