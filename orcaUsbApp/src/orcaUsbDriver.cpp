@@ -1224,8 +1224,8 @@ asynStatus OrcaUsbDriver::configureROI() {
     }
 
     status |= getIntegerParam(ADMinX, &minX);
-    if (minX < 0) {
-        minX = 0; 
+    if (minX <= 0) {
+        minX = 1; 
         status |= setIntegerParam(ADMinX, minX);
     } else if (minX > maxSizeX-1) {
         minX = maxSizeX-1;
@@ -1233,8 +1233,8 @@ asynStatus OrcaUsbDriver::configureROI() {
     }
 
     status |= getIntegerParam(ADMinY, &minY);
-    if (minY < 0) {
-        minY = 0; 
+    if (minY <= 0) {
+        minY = 1; 
         status |= setIntegerParam(ADMinY, minY);
     } else if (minY > maxSizeY-1) {
         minY = maxSizeY-1;
@@ -1249,7 +1249,7 @@ asynStatus OrcaUsbDriver::configureROI() {
                 "%s::%s: port %s: sizeX changed to %d\n", 
                 driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeX);
     }
-    if (sizeX == 0) {
+    if (sizeX <= 0) {
         sizeX = 1;
         status |= setIntegerParam(ADSizeX, sizeX);
     }
@@ -1262,7 +1262,7 @@ asynStatus OrcaUsbDriver::configureROI() {
                 "%s::%s: port %s: sizeY changed to %d\n", 
                 driverName.c_str(), functionName.c_str(), port_name.c_str(), sizeY);
     }
-    if (sizeY == 0) {
+    if (sizeY <= 0) {
         sizeY = 1;
         status |= setIntegerParam(ADSizeY, sizeY);
     }
