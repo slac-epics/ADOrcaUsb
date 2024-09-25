@@ -728,11 +728,9 @@ int OrcaUsbDriver::getSensorMode(double *value) {
 }
 
 
-/**
-  * READOUT TIME (R/O) property returns frame read out time in seconds.
-  */
 int OrcaUsbDriver::setSensorMode(int value) {
 /**********************************************************************
+  * READOUT TIME (R/O) property returns frame read out time in seconds.
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -812,11 +810,9 @@ int OrcaUsbDriver::setShutterMode(int value) {
 }
 
 
-/**
-  * READOUT TIME (R/O) property returns frame read out time in seconds.
-  */
 int OrcaUsbDriver::getReadoutTime(double *value) {
 /**********************************************************************
+  * READOUT TIME (R/O) property returns frame read out time in seconds.
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -840,7 +836,8 @@ int OrcaUsbDriver::getReadoutTime(double *value) {
 }
 
 
-/**
+int OrcaUsbDriver::getTimingExposure(double *value) {
+/**********************************************************************
   * TIMING EXPOSURE (R/O) property returns the timing of exposure. 
   * This property can have one of following values:
   * DCAMPROP_TIMING_EXPOSURE__AFTERREADOUT
@@ -853,9 +850,6 @@ int OrcaUsbDriver::getReadoutTime(double *value) {
   *   "ALWAYS"   The sensor is exposed always, even in reading out period.
   * DCAMPROP_TIMING_EXPOSURE__TDI
   *   "TDI"   The sensor is running as TDI sensor.
-  */
-int OrcaUsbDriver::getTimingExposure(double *value) {
-/**********************************************************************
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -879,14 +873,12 @@ int OrcaUsbDriver::getTimingExposure(double *value) {
 }
 
 
-/**
+int OrcaUsbDriver::getGlobalExposureDelay(double *value) {
+/**********************************************************************
   * GLOBAL EXPOSURE DELAY (R/O) property returns how long GLOBAL EXPOSURE is delayed from beginning of EXPOSURE itself.
   * If the sensor does not have GLOBAL SHUTTER capability, GLOBAL EXPOSURE timing, 
   * which means all pixels on the sensor is exposed, is delayed. 
   *	This property is EFFECTIVE when DCAM_IDPROP_TRIGGER_GLOBAL_EXPOSURE is DELAYED.
-  */
-int OrcaUsbDriver::getGlobalExposureDelay(double *value) {
-/**********************************************************************
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -910,14 +902,12 @@ int OrcaUsbDriver::getGlobalExposureDelay(double *value) {
 }
 
 
-/**
+int OrcaUsbDriver::getInvalidExposurePeriod(double *value) {
+/**********************************************************************
   * INVALID EXPOSURE PERIOD (R/O) value shows how long takes starting exposure from input trigger.
   * Because of its structure, some sensors cannot start exposure immediately.
   * There are various reasons but this property just tells how long it is.
   * This value does not include jitter of input trigger.
-  */
-int OrcaUsbDriver::getInvalidExposurePeriod(double *value) {
-/**********************************************************************
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -941,11 +931,9 @@ int OrcaUsbDriver::getInvalidExposurePeriod(double *value) {
 }
 
 
-/**
-  * TRIGGER DELAY (R/W) property can set delay time for using this timing inside of camera.
-  */
 int OrcaUsbDriver::getTriggerDelay(double *value) {
 /**********************************************************************
+  * TRIGGER DELAY (R/W) property can set delay time for using this timing inside of camera.
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -987,7 +975,8 @@ int OrcaUsbDriver::setTriggerDelay(double value) {
 }
 
 
-/**
+int OrcaUsbDriver::getTriggerGlobalExposure(double *value) {
+/**********************************************************************
   * TRIGGER GLOBAL EXPOSURE (R/W) property allows you to choose GLOBAL EXPOSURE option in some trigger modes. 
   * The following values are predefined:
   * DCAMPROP_TRIGGER_GLOBALEXPOSURE__ALWAYS
@@ -1005,9 +994,6 @@ int OrcaUsbDriver::setTriggerDelay(double value) {
   *   "GLOBAL RESET"   Global reset is used. In this case, sensor is CMOS with rolling shutter,
   *                    but reset timing is globally same. So the light source can illuminate very soon
   *                    after trigger without waiting sensor reset time.
-  */
-int OrcaUsbDriver::getTriggerGlobalExposure(double *value) {
-/**********************************************************************
 **********************************************************************/
     int ret = 0;
     DCAMERR err;
@@ -1794,6 +1780,39 @@ asynStatus OrcaUsbDriver::writeFloat64(asynUser *pasynUser, epicsFloat64 value) 
 //-------------------------------------------------------------------------
 // End ADDriver function overrides
 //-------------------------------------------------------------------------
+
+
+void OrcaUsbDriver::report(FILE *fp, int details) {
+/**********************************************************************
+  * Report status of the driver.
+  * Prints details about the detector in use if details > 0.
+  * It then calls the ADDriver::report() method.
+  * \param[in] fp File pointed passed by caller where the output is written to.
+  * \param[in] details Controls the level of detail in the report.
+**********************************************************************/
+    std::string functionName = "report";
+    char str[128];
+    int xsize, ysize;
+
+    fprintf(fp, "Orca  cam %d, port = %s\n", cameraIndex, port_name.c_str());
+    if (details > 0) {
+        if (getCameraName(str) != -1)
+            fprintf(fp, "  Model: %s\n", str);
+        if (getCameraInfo(str) != -1)
+            fprintf(fp, "  Series: %s\n", str);
+        if (getCameraSerial(str) != -1) 
+            fprintf(fp, "  Serial number: %s\n", str); 
+        if (getCameraFirmware(str) != -1) 
+            fprintf(fp, "  Firmware version: %s\n", str);
+
+        getIntegerParam(ADMaxSizeX, &xsize);
+        getIntegerParam(ADMaxSizeY, &ysize);
+        fprintf(fp, "  X pixels: %d\n", xsize);
+        fprintf(fp, "  Y pixels: %d\n", ysize);
+    }
+    // Call the base class method
+    ADDriver::report(fp, details);
+}
 
 
 /**********************************************************************

@@ -1,37 +1,51 @@
 RELEASE_NOTES for orcaUsbApp (Orca-Flash Camera USB Driver)
 ----------------------------------------------------
-R0.1.1:   2023-02-21 Bruce Hill
-          Updated to ADCore/R3.10-1.1.0
 
-R0.1.0:   2023-02-12   J. Vamosi
-          Added camera status check
+R0.1.2: 2024-09-25  M. Dunning
+        - Downgrade to ADCore R3.9-1.1.0. ProfileMonitorAD is still using R3.9-1.1.0, 
+                and AFAIK is the only user of this driver.
+        - Add vendor header files - cannot build without them.
+        - Fix CAMERA_STATUS so it shows when camera is connected.
+        - Clean up formatting and reorganize driver code so that it is more consistent 
+                with other drivers.
+        - Rewrite dataTask function: add ROI support, add locking, general cleanup.
+        - Merge findCamera* functions and simplify.
+        - Make OrcaConfig() more flexible by not requiring serial number.  
+                Now one can use next available camera by setting serial number 
+                to "0" in OrcaConfig().
 
-R0.0.9:   2022-11-19   J. Vamosi
-          Fix crash on not available cameras when aquiring
+R0.1.1: 2023-02-21 Bruce Hill
+        Updated to ADCore/R3.10-1.1.0
 
-R0.0.8:   2022-05-12   J. Vamosi
-          Restore serial number check for camera identification
+R0.1.0: 2023-02-12   J. Vamosi
+        Added camera status check
 
-R0.0.7:   2022-02-12   J. Vamosi
-          Updated to ADCore/R3.9-1.1.0
-          For image acquisition dcambuf_copyframe() replaced with dcambuf_lockframe()
+R0.0.9: 2022-11-19   J. Vamosi
+        Fix crash on not available cameras when aquiring
 
-R0.0.6:   2022-02-22   egumtow
-          updated Asyn to R4.39-1.0.1 and ADCORE to R3.9-1.0.3
+R0.0.8: 2022-05-12   J. Vamosi
+        Restore serial number check for camera identification
 
-R0.0.5:   2022-02-06   J. Vamosi
-          Decreased image size to 2040x2040 for multiple camera support
+R0.0.7: 2022-02-12   J. Vamosi
+        Updated to ADCore/R3.9-1.1.0
+        For image acquisition dcambuf_copyframe() replaced with dcambuf_lockframe()
 
-R0.0.4:   2022-01-16   J. Vamosi
-          Debug option added (use environmental variable ORCA_DEBUG=ON)
+R0.0.6: 2022-02-22   egumtow
+        updated Asyn to R4.39-1.0.1 and ADCORE to R3.9-1.0.3
 
-R0.0.3:   2021-10-29   J. Vamosi
-          Exposure debug message removed to avoid flooding log file
+R0.0.5: 2022-02-06   J. Vamosi
+        Decreased image size to 2040x2040 for multiple camera support
 
-R0.0.2:   2021-09-29   K. Luchini  (luchini)
-          - upgrade to asyn/R4.39-1.0.0
-          - upgrade to ADCore/R3.9-1.0.2
+R0.0.4: 2022-01-16   J. Vamosi
+        Debug option added (use environmental variable ORCA_DEBUG=ON)
 
-R0.0.1:   2021-08-26   J. Vamosi
-          Initial release of Orca camera USB driver
+R0.0.3: 2021-10-29   J. Vamosi
+        Exposure debug message removed to avoid flooding log file
+
+R0.0.2: 2021-09-29   K. Luchini  (luchini)
+        - upgrade to asyn/R4.39-1.0.0
+        - upgrade to ADCore/R3.9-1.0.2
+
+R0.0.1: 2021-08-26   J. Vamosi
+        Initial release of Orca camera USB driver
 

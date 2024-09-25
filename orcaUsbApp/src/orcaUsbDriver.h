@@ -32,6 +32,7 @@ class OrcaUsbDriver : public ADDriver {
         virtual ~OrcaUsbDriver();
         virtual asynStatus writeInt32(asynUser *pasynUser, epicsInt32 value);
         virtual asynStatus writeFloat64(asynUser *pasynUser, epicsFloat64 value);
+        virtual void report(FILE *fp, int details);
 
         void dataTask(void);
         void exitHook(void);
