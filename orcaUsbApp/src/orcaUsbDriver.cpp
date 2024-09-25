@@ -1224,8 +1224,8 @@ asynStatus OrcaUsbDriver::configureROI() {
     }
 
     status |= getIntegerParam(ADMinX, &minX);
-    if (minX <= 0) {
-        minX = 1; 
+    if (minX < MIN_X) {
+        minX = MIN_X; 
         status |= setIntegerParam(ADMinX, minX);
     } else if (minX > maxSizeX-1) {
         minX = maxSizeX-1;
@@ -1233,8 +1233,8 @@ asynStatus OrcaUsbDriver::configureROI() {
     }
 
     status |= getIntegerParam(ADMinY, &minY);
-    if (minY <= 0) {
-        minY = 1; 
+    if (minY < MIN_Y) {
+        minY = MIN_Y; 
         status |= setIntegerParam(ADMinY, minY);
     } else if (minY > maxSizeY-1) {
         minY = maxSizeY-1;
